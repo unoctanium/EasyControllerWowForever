@@ -44,7 +44,7 @@ local L = CK.L
 --
 -- Made for the right hand alone (asked): the left thumb stays on the left
 -- stick, which goes on moving the character while a wheel is open (the
--- wheel takes no stick; the camera is turned back as the right stick aims).
+-- wheel takes the right stick only, as the game's own radial menus do).
 -- Every wheel is aimed with the right stick and always has all its
 -- sections (8, a party spell's 6), the empty ones too; the bottom one is
 -- EXIT and holds nothing. Pressed (the default): a flick toward a section
@@ -333,10 +333,32 @@ end
 -- game's own radial menus keep only the right one, but an addon's answer
 -- is ignored), so the character couldn't walk while a wheel was open. Not
 -- taken, the left stick walks; the right one would also turn the camera
--- while it aims. Its speed can't be set to 0 (the game keeps it at 0.5 at
--- least: Blizzard_SettingsDefinitions_Shared/Gamepad.lua), so the camera
--- is turned back the other way meanwhile, as fast, with the game's camera
--- functions (CounterCamera, as staying seated turns it)
+-- while it aims: its speeds are set to 0 while a wheel is open, given back
+-- when it closes (kept in the settings, so a crash or a reload gives them
+-- back at the next login: RestoreSettings)
+local CAMERA_SPEEDS = { "GamePadCameraYawSpeed", "GamePadCameraPitchSpeed" }
+
+function W:HoldCamera(hold)
+    local s = settings()
+    local get = C_CVar and C_CVar.GetCVar or GetCVar
+    local set = C_CVar and C_CVar.SetCVar or SetCVar
+    if hold and not s.camera then
+        s.camera = {}
+        for _, cvar in ipairs(CAMERA_SPEEDS) do
+            local ok, value = pcall(get, cvar)
+            if ok and value ~= nil then
+                s.camera[cvar] = value
+                pcall(set, cvar, "0")
+            end
+        end
+    elseif not hold and s.camera then
+        for cvar, value in pairs(s.camera) do pcall(set, cvar, value) end
+        s.camera = nil
+    end
+    -- (debug: whether the game took it, in combat too)
+    local ok, yaw = pcall(get, CAMERA_SPEEDS[1])
+    W:Log(format("camera %s: yaw speed now %s", hold and "held" or "given back", ok and tostring(yaw) or "?"))
+end
 
 -- What happened on the last openings and presses, for /ec wheel
 local log = {}
@@ -859,8 +881,8 @@ function W:Build()
     local view = CK.NewFrame("Frame", nil, wheel)
     view:SetAllPoints()
     self.view = view
-    -- The sticks stay the game's (the left one walks); the camera turned
-    -- back as the right stick turns it, while it shows (CounterCamera)
+    -- The sticks stay the game's (the left one walks); the camera held
+    -- still while it shows (HoldCamera)
     -- The wheel, always in its 8 sections
     local bg = view:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("CENTER")
@@ -890,16 +912,13 @@ function W:Build()
     view.help:SetPoint("TOP", view.bottom, "BOTTOM", 0, -4)
     view.pages = view:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     view.pages:SetPoint("TOP", view.help, "BOTTOM", 0, -4)
-    view:SetScript("OnUpdate", function(frame)
-        W:Track()
-        W.CounterCamera(frame)
-    end)
-    view:SetScript("OnShow", function(frame)
-        W.StopCamera(frame)
+    view:SetScript("OnUpdate", function() W:Track() end)
+    view:SetScript("OnShow", function()
+        W:HoldCamera(true)
         W:Paint()
         W:Log("open")
     end)
-    view:SetScript("OnHide", function(frame) W.StopCamera(frame) end)
+    view:SetScript("OnHide", function() W:HoldCamera(false) end)
     -- Closed (its keys let go in its secure code, which our binding hooks
     -- don't see): the replaced buttons it held back are bound again
     wheel:HookScript("OnHide", function()
@@ -1234,21 +1253,6 @@ W.SeatedCamera = function(frame)
     local x, y = cameraStick()
     turn(frame, "yaw", x)
     turn(frame, "pitch", y)
-end
-W.StopCamera = stopCamera
-
--- A wheel open (it takes no stick): the camera turned the other way, as
--- fast as the right stick turns it, so it stays still while the stick aims
--- (the game's inverted axes followed)
-local function inverted(cvar)
-    local get = C_CVar and C_CVar.GetCVarBool
-    return get and get(cvar) and -1 or 1
-end
-W.CounterCamera = function(frame)
-    if not frame.camera then stopCamera(frame) end
-    local x, y = cameraStick()
-    turn(frame, "yaw", -x * inverted("gamepadInvertYaw"))
-    turn(frame, "pitch", -y * inverted("gamepadInvertPitch"))
 end
 
 -- A menu or window that needs the sticks: the game's radial menu (Start),
