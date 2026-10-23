@@ -44,7 +44,8 @@ local L = CK.L
 --
 -- Made for the right hand alone (asked): the left thumb stays on the left
 -- stick, which goes on moving the character while a wheel is open (the
--- wheel takes the right stick only, as the game's own radial menus do).
+-- wheel takes both sticks, the camera stays still; the left stick's
+-- direction keys walk meanwhile, see SHOW).
 -- Every wheel is aimed with the right stick and always has all its
 -- sections (8, a party spell's 6), the empty ones too; the bottom one is
 -- EXIT and holds nothing. Pressed (the default): a flick toward a section
@@ -313,14 +314,6 @@ function W:TakeSticks(frame, on)
     if frame.EnableGamePadStick then pcall(frame.EnableGamePadStick, frame, on) end
 end
 
--- A frame that takes the sticks keeps the right one only, as the game's own
--- radial menus do (Blizzard_RadialWheel.lua): its stick script answering
--- true lets that stick through to the game, so the left one goes on moving
--- the character while a wheel is open
-local function aimOnly(_, stick)
-    return stick ~= "Camera" and stick ~= "Right"
-end
-
 -- Held to show (Wheels > Opening): the stick lights, the key's release uses
 function W.Held()
     return CK.db ~= nil and settings().hold == true
@@ -356,7 +349,7 @@ function W:BuildHold()
     hold:SetAllPoints(UIParent)
     hold:Hide()
     hold.elapsed = 0
-    hold:SetScript("OnGamePadStick", aimOnly)
+    hold:SetScript("OnGamePadStick", function() end)
     hold:SetScript("OnShow", function(self)
         self.elapsed = 0
         W:TakeSticks(self, true)
@@ -586,6 +579,17 @@ local SHOW = [[
         end
     end
     owner:SetBindingClick(true, "ESCAPE", "ControllerKeyboardWheelClose")
+    -- The left stick walks while the wheel has the sticks: its direction
+    -- keys (GamePadStickAxisButtons, on while a wheel is on a button) bound
+    -- to the movement actions, with every modifier; walking is digital
+    -- meanwhile (8 directions, strafing). The idea is Improved Forever's
+    -- (ImprovedForever_Wheel, Ring.lua)
+    for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
+        owner:SetBinding(true, prefix .. "PADLSTICKUP", "MOVEFORWARD")
+        owner:SetBinding(true, prefix .. "PADLSTICKDOWN", "MOVEBACKWARD")
+        owner:SetBinding(true, prefix .. "PADLSTICKLEFT", "STRAFELEFT")
+        owner:SetBinding(true, prefix .. "PADLSTICKRIGHT", "STRAFERIGHT")
+    end
     for key in gmatch(owner:GetAttribute("ck-pstickkeys"), "([^,]+),") do
         owner:SetAttribute("ck-held-" .. key, 0)
         owner:SetAttribute("ck-seen-" .. key, nil)
@@ -898,11 +902,11 @@ function W:Build()
     -- wheel), like the game's own wheels, so the character and the camera
     -- don't move (and food can be eaten: not while moving). Turned on each
     -- time it shows; its stick script is needed for the game to give it them.
-    -- The right stick only: the left one goes on moving the character
-    view:SetScript("OnGamePadStick", function(self, stick)
-        W:Track()
-        return aimOnly(self, stick)
-    end)
+    -- It takes both, whatever its script answers (checked in game: the
+    -- answer that lets the game's own radial menus keep only the right
+    -- stick is ignored from an addon); the left one walks through the
+    -- bindings the wheel sets while open (SHOW)
+    view:SetScript("OnGamePadStick", function() W:Track() end)
     -- The wheel, always in its 8 sections
     local bg = view:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("CENTER")

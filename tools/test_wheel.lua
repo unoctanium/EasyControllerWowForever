@@ -27,6 +27,7 @@ local function handle(name)
   function h:GetName() return self.name end
   function h:ClearBindings() self.bindings = {} end
   function h:SetBindingClick(_, key, target) self.bindings[key] = target end
+  function h:SetBinding(_, key, action) self.bindings[key] = action end
   return h
 end
 local owner = handle("wheel")
@@ -91,6 +92,8 @@ check("press opens wheel 1", owner:IsShown() and owner:GetAttribute("wheel") == 
 check("slot 1 & 3 shown, 5 hidden", slots[1].shown and slots[3].shown and not slots[5].shown and not slots[2].shown)
 check("opener key RB not taken by the wheel", owner.bindings["PADRSHOULDER"] == nil and owner.bindings["PADLSHOULDER"] ~= nil)
 check("A, B and stick keys taken", owner.bindings["PAD1"] and owner.bindings["PAD2"] and owner.bindings["PADRSTICKRIGHT"])
+check("left stick walks: its direction keys bound to movement", owner.bindings["PADLSTICKUP"] == "MOVEFORWARD"
+    and owner.bindings["SHIFT-PADLSTICKLEFT"] == "STRAFELEFT")
 run(SN.TOGGLE, toggle, "LeftButton", false)
 check("release in press mode: still open", owner:IsShown())
 local r = flick("PADRSTICKRIGHT", 1, 0)
