@@ -394,8 +394,8 @@ end
 -- faces), the gamepad's walk the camera's (reported: walking toward the
 -- camera, then the wheel opened, the stick left strafed right). Mouse-look,
 -- as long as the wheel walks: the character turns to the camera, the
--- movement actions go the camera's way (experimental: whether the game
--- lets an addon start it, logged)
+-- movement actions go the camera's way (checked in game: an addon may
+-- start it; logged for /ec wheel)
 function W:FaceCamera(on)
     if on and W.StickMode() == "strafe" and MouselookStart and not (IsMouselooking and IsMouselooking()) then
         local ok, err = pcall(MouselookStart)
