@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **Wheels for the right hand alone**: the left stick keeps moving your character while a wheel is
+  open (a wheel now takes the right stick only, as the game's own radial menus do). Every wheel is
+  aimed with the right stick; the option to aim with the left stick is gone.
+- **Pressed** (the default): flick the right stick toward a section and let it go to use it. The
+  wheel's button pressed again closes it, nothing used, whichever button it is (A, B, LB, RB too).
+- **EXIT at the bottom of every wheel**: pull the right stick down and let it go, the wheel closes.
+  Your own wheels' bottom slot can no longer be filled: what was there moves to the first empty
+  slot (a full wheel loses it, said once in the chat). The consumables and usable items wheels hold
+  7 a page.
+- **Every section can be aimed at, the empty ones too**: a wheel always has its 8 sections, your
+  own wheels' slots stay where you put them; an empty section closes the wheel.
+- **Hold to show** (Wheels › Opening): the right stick only lights a section, it stays lit when the
+  stick goes back to the middle; let go of the button to use it. EXIT, an empty section or nothing
+  lit: closed, nothing used. What is lit is what will be used.
+- **Party/Healer wheel: 6 sections**: you at the top, EXIT at the bottom, members 1 and 2 on your
+  right, 3 and 4 on your left.
+- The right stick's direction keys (the game's GamePadStickAxisButtons setting) are on while a
+  wheel is on a button: they are how the wheels see the stick let go in combat.
+
 ## 1.19.2
 
 - **L3 / R3 with a game function alone: their trigger layers locked** (reported: Jump on L3 alone,
