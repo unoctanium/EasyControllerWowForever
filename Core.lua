@@ -94,6 +94,10 @@ local DEFAULTS = {
         -- the stick lights, let go of the key to use (off: pressed, a flick
         -- of the stick let go uses)
         hold = false,
+        -- The sticks while a wheel is open: "walk" (not taken: you walk, the
+        -- camera turns as you aim), "strafe" (taken: the camera still, the
+        -- left stick walks digitally), "still" (taken: you stand still)
+        sticks = "strafe",
         -- The usable items' wheel: the items hidden from it ({ [item ID] =
         -- true }, false once shown again); the hearthstone by default
         usableHidden = { [6948] = true },

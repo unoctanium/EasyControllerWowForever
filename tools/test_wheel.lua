@@ -33,11 +33,16 @@ end
 local owner = handle("wheel")
 local slots = {}
 for i = 1, 8 do slots[i] = handle("slot" .. i) end
-function owner:GetFrameRef(n) return slots[tonumber(n:match("%d+"))] end
+local walker = handle("walker")
+function owner:GetFrameRef(n)
+    if n == "walker" then return walker end
+    return slots[tonumber(n:match("%d+"))]
+end
 
 local stick = { x = 0, y = 0, len = 0 }
+local walkStick = { x = 0, y = 0, len = 0 }
 local senv = setmetatable({
-  GetGamePadState = function() return { sticks = { {x=0,y=0,len=0}, stick } } end,
+  GetGamePadState = function() return { sticks = { walkStick, stick } } end,
   UnitExists = function(u) return u == "player" or u == "party1" end,
   strsub = string.sub, strfind = string.find, gmatch = string.gmatch, format = string.format,
   tostring = tostring, math = math,
@@ -59,6 +64,7 @@ for n = 1, 8 do for i = 1, n do
   owner:SetAttribute("ck-x" .. n .. "-" .. i, math.sin(a)); owner:SetAttribute("ck-y" .. n .. "-" .. i, math.cos(a))
 end end
 owner:SetAttribute("ck-radius", 128); owner:SetAttribute("ck-pradius", 62); owner:SetAttribute("ck-stick", 2)
+owner:SetAttribute("ck-walkstick", 1); owner:SetAttribute("ck-move", "strafe")
 -- wheel "1": slots 1 (top) and 3 (right) filled; 5 EXIT; others empty
 owner:SetAttribute("ck-1-1-n", 8); owner:SetAttribute("ck-1-pages", 1); owner:SetAttribute("ck-1-total", 2)
 owner:SetAttribute("ck-1-1-1-t", "spell"); owner:SetAttribute("ck-1-1-1", "Heal")
@@ -92,8 +98,26 @@ check("press opens wheel 1", owner:IsShown() and owner:GetAttribute("wheel") == 
 check("slot 1 & 3 shown, 5 hidden", slots[1].shown and slots[3].shown and not slots[5].shown and not slots[2].shown)
 check("opener key RB not taken by the wheel", owner.bindings["PADRSHOULDER"] == nil and owner.bindings["PADLSHOULDER"] ~= nil)
 check("A, B and stick keys taken", owner.bindings["PAD1"] and owner.bindings["PAD2"] and owner.bindings["PADRSTICKRIGHT"])
-check("left stick walks: its direction keys bound to movement", owner.bindings["PADLSTICKUP"] == "MOVEFORWARD"
-    and owner.bindings["SHIFT-PADLSTICKLEFT"] == "STRAFELEFT")
+check("strafe: the left stick's direction keys bound to movement (walker)", walker.bindings["PADLSTICKUP"] == "MOVEFORWARD"
+    and walker.bindings["SHIFT-PADLSTICKLEFT"] == "STRAFELEFT")
+-- closed while walking: the movement bindings stay (their release must reach them)
+walkStick.x, walkStick.len = -1, 1
+run(SN.TOGGLE, toggle, "LeftButton", true)
+check("closed with the left stick out: wheel keys gone, movement kept", not owner:IsShown()
+    and owner.bindings["PAD1"] == nil and walker.bindings["PADLSTICKLEFT"] == "STRAFELEFT")
+walkStick.x, walkStick.len = 0, 0
+run(SN.TOGGLE, toggle, "LeftButton", false)
+run(SN.TOGGLE, toggle, "LeftButton", true)
+run(SN.TOGGLE, toggle, "LeftButton", true)
+check("closed with the left stick let go: movement bindings gone", walker.bindings["PADLSTICKLEFT"] == nil)
+run(SN.TOGGLE, toggle, "LeftButton", false)
+owner:SetAttribute("ck-move", "still")
+run(SN.TOGGLE, toggle, "LeftButton", true)
+check("still: no movement bindings", walker.bindings["PADLSTICKUP"] == nil)
+run(SN.TOGGLE, toggle, "LeftButton", true)
+run(SN.TOGGLE, toggle, "LeftButton", false)
+owner:SetAttribute("ck-move", "strafe")
+run(SN.TOGGLE, toggle, "LeftButton", true)
 run(SN.TOGGLE, toggle, "LeftButton", false)
 check("release in press mode: still open", owner:IsShown())
 local r = flick("PADRSTICKRIGHT", 1, 0)

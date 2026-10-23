@@ -322,6 +322,18 @@ function W.Held()
     return CK.db ~= nil and settings().hold == true
 end
 
+-- The sticks while a wheel is open (Wheels > Opening, asked): "walk" the
+-- wheel takes no stick (you walk as always, the right stick turns the
+-- camera as it aims: the game can't hold one stick and not the other),
+-- "strafe" it takes both (the camera still; the left stick's direction
+-- keys walk, digital: forward, back, strafing), "still" it takes both and
+-- you stand still
+W.STICK_MODES = { "walk", "strafe", "still" }
+function W.StickMode()
+    local mode = CK.db and settings().sticks
+    return (mode == "walk" or mode == "still") and mode or "strafe"
+end
+
 -- Its name in the texts
 function W.StickWords()
     return L.WHEEL_STICK_RIGHT
@@ -339,13 +351,44 @@ local function aimLength()
     return stick and stick.len or 0
 end
 
+-- How far the stick that walks is pushed now (its index set by Fill)
+local function walkLength()
+    local state = C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetDeviceMappedState()
+    local stick = state and state.sticks and W.frame and state.sticks[W.frame:GetAttribute("ck-walkstick") or 1]
+    return stick and stick.len or 0
+end
+
 -- After the wheel closes with its stick still pushed, the sticks are kept a
 -- moment, so the character doesn't walk off (or stand up from eating): until
 -- that stick is let go, at most HOLD_MAX. Players lost the character and the
 -- camera for seconds when they kept pushing (to walk on) or another stick or
 -- axis of their pad never read as let go: only the aiming stick counts now,
 -- and only for a moment.
+--
+-- Closed while walking through the wheel's movement bindings ("strafe"):
+-- those stay (the wheel's secure HIDE leaves them, on the walker frame)
+-- and so do the sticks, until the left stick is let go: its direction
+-- key's release must reach the movement action, else the character walks
+-- on for good (reported: strafing that nothing stopped, a /reload
+-- neither). Let go, the bindings go too (out of combat; in combat as the
+-- fight ends, or with the wheel's next opening)
 local HOLD_MAX = 0.4
+local WALK_REST = 0.1
+
+-- The walker's movement bindings gone, if the left stick is let go
+function W:DropWalk()
+    if not self.walker or InCombatLockdown() or (self.frame and self.frame:IsShown()) then return end
+    if walkLength() < WALK_REST then
+        ClearOverrideBindings(self.walker)
+    elseif not self.dropPending then
+        -- (still out: once it is let go; never while one of its keys is down)
+        self.dropPending = true
+        C_Timer.After(0.3, function()
+            W.dropPending = nil
+            W:DropWalk()
+        end)
+    end
+end
 
 function W:BuildHold()
     local hold = CK.NewFrame("Frame", nil, UIParent)
@@ -357,16 +400,23 @@ function W:BuildHold()
         self.elapsed = 0
         W:TakeSticks(self, true)
     end)
-    hold:SetScript("OnHide", function(self) W:TakeSticks(self, false) end)
+    hold:SetScript("OnHide", function(self)
+        W:TakeSticks(self, false)
+        W:DropWalk()
+    end)
     hold:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = self.elapsed + elapsed
-        if self.elapsed > HOLD_MAX or aimLength() < 0.2 then self:Hide() end
+        local aiming = self.elapsed <= HOLD_MAX and aimLength() >= 0.2
+        local walking = self.walking and walkLength() >= WALK_REST
+        if not (aiming or walking) then self:Hide() end
     end)
     self.hold = hold
 end
 
 function W:HoldSticks()
-    if aimLength() >= 0.2 then self.hold:Show() end
+    if W.StickMode() == "walk" then return end
+    self.hold.walking = W.StickMode() == "strafe" and walkLength() >= WALK_REST
+    if self.hold.walking or aimLength() >= 0.2 then self.hold:Show() end
 end
 
 -- What happened on the last openings and presses, for /ec wheel
@@ -555,6 +605,13 @@ local HIDE = [[
     owner:Hide()
     owner:ClearBindings()
     owner:SetAttribute("ck-aim", 0)
+    -- The movement bindings ("strafe", on the walker frame): kept while the
+    -- left stick is out, its release must reach them (W:HoldSticks)
+    local walkState = GetGamePadState()
+    local walkStick = walkState and walkState.sticks and walkState.sticks[owner:GetAttribute("ck-walkstick") or 1]
+    if not (walkStick and walkStick.len and walkStick.len >= ]] .. WALK_REST .. [[) then
+        owner:GetFrameRef("walker"):ClearBindings()
+    end
 ]]
 
 -- Opening: shown, the keys it uses taken while it is open (but the key of
@@ -582,16 +639,23 @@ local SHOW = [[
         end
     end
     owner:SetBindingClick(true, "ESCAPE", "ControllerKeyboardWheelClose")
-    -- The left stick walks while the wheel has the sticks: its direction
-    -- keys (GamePadStickAxisButtons, on while a wheel is on a button) bound
-    -- to the movement actions, with every modifier; walking is digital
-    -- meanwhile (8 directions, strafing). The idea is Improved Forever's
+    -- "strafe" (Wheels > Opening): the left stick walks while the wheel has
+    -- the sticks: its direction keys (GamePadStickAxisButtons, on while a
+    -- wheel is on a button) bound to the movement actions, with every
+    -- modifier; walking is digital meanwhile (8 directions, strafing). On a
+    -- frame of their own (the walker), so the wheel closing with the stick
+    -- out can leave them (HIDE). The idea is Improved Forever's
     -- (ImprovedForever_Wheel, Ring.lua)
-    for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
-        owner:SetBinding(true, prefix .. "PADLSTICKUP", "MOVEFORWARD")
-        owner:SetBinding(true, prefix .. "PADLSTICKDOWN", "MOVEBACKWARD")
-        owner:SetBinding(true, prefix .. "PADLSTICKLEFT", "STRAFELEFT")
-        owner:SetBinding(true, prefix .. "PADLSTICKRIGHT", "STRAFERIGHT")
+    local walker = owner:GetFrameRef("walker")
+    if owner:GetAttribute("ck-move") == "strafe" then
+        for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
+            walker:SetBinding(true, prefix .. "PADLSTICKUP", "MOVEFORWARD")
+            walker:SetBinding(true, prefix .. "PADLSTICKDOWN", "MOVEBACKWARD")
+            walker:SetBinding(true, prefix .. "PADLSTICKLEFT", "STRAFELEFT")
+            walker:SetBinding(true, prefix .. "PADLSTICKRIGHT", "STRAFERIGHT")
+        end
+    else
+        walker:ClearBindings()
     end
     for key in gmatch(owner:GetAttribute("ck-pstickkeys"), "([^,]+),") do
         owner:SetAttribute("ck-held-" .. key, 0)
@@ -841,6 +905,10 @@ function W:Build()
         wheel:SetAttribute("ck-kx-" .. key, d[1])
         wheel:SetAttribute("ck-ky-" .. key, d[2])
     end
+    -- The movement bindings' own secure frame (SHOW, HIDE)
+    local walker = CK.NewFrame("Frame", "ControllerKeyboardWheelWalker", UIParent, "SecureHandlerBaseTemplate")
+    SecureHandlerSetFrameRef(wheel, "walker", walker)
+    self.walker = walker
     wheel:SetAttribute("ck-home-w", WHEEL_SIZE)
     wheel:SetAttribute("ck-home-h", 600)
     self.frame = wheel
@@ -941,7 +1009,8 @@ function W:Build()
     view.pages:SetPoint("TOP", view.help, "BOTTOM", 0, -4)
     view:SetScript("OnUpdate", function() W:Track() end)
     view:SetScript("OnShow", function()
-        W:TakeSticks(view, true)
+        -- ("walk": the sticks stay the game's)
+        W:TakeSticks(view, W.StickMode() ~= "walk")
         W.hold:Hide()
         W:Paint()
         W:Log("open")
@@ -1558,6 +1627,10 @@ function W:Fill()
     for _, t in pairs(self.partyToggles) do self:StoreParty(t.ckSpell) end
     self:PlacePartyKeys()
     wheel:SetAttribute("ck-stick", stickIndex("Camera", 2))
+    -- The sticks while open (Wheels > Opening), the stick that walks
+    wheel:SetAttribute("ck-move", W.StickMode())
+    wheel:SetAttribute("ck-walkstick", stickIndex("Movement", 1))
+    self:DropWalk()
     -- The open wheel emptied: closed
     local open = wheel:GetAttribute("wheel") or "c"
     if wheel:IsShown() and (wheel:GetAttribute("ck-" .. open .. "-total") or 0) == 0 then
@@ -2480,7 +2553,10 @@ function W:Init()
             W:Paint()
             return
         end
-        if event == "PLAYER_REGEN_ENABLED" then W:RestoreSettings() end
+        if event == "PLAYER_REGEN_ENABLED" then
+            W:RestoreSettings()
+            W:DropWalk()
+        end
         if event == "PLAYER_LOGOUT" then
             W:StickKeys(false)
             return

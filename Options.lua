@@ -893,6 +893,17 @@ local function wheelOpenRows(b)
             s.hold = v
             CK.ConsumableWheel:Fill()
         end })
+    -- The sticks while a wheel is open (asked): walk, strafe or stand still
+    local W = CK.ConsumableWheel
+    b.choice({ id = "w_sticks", label = L.LBL_WHEEL_STICKS, tip = L.TIP_WHEEL_STICKS,
+        text = function() return L["WHEEL_STICKS_" .. W.StickMode():upper()] end,
+        step = function(d)
+            local modes, now = W.STICK_MODES, W.StickMode()
+            for i, mode in ipairs(modes) do
+                if mode == now then s.sticks = modes[(i - 1 + (d or 1)) % #modes + 1] break end
+            end
+            W:Fill()
+        end })
 end
 
 local function wheelPositionRows(b)
