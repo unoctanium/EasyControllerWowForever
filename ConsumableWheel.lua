@@ -315,7 +315,7 @@ function W:TakeSticks(frame, on)
     if frame.EnableGamePadStick then pcall(frame.EnableGamePadStick, frame, on) end
 end
 
--- (debug) /ec sticks pass | blizz | free | off: what the game lets an addon frame
+-- (debug) /ec sticks pass | free | off: what the game lets an addon frame
 -- do with the sticks. "pass": a frame takes the sticks and answers true for
 -- both (every stick named in the log): can the character still walk and
 -- the camera turn? "free": the wheels take no stick at all. "off": back
@@ -339,25 +339,6 @@ function W:StickTest(mode)
         local ok, err = pcall(f.EnableGamePadStick, f, true)
         W:Log("stick test: pass on, " .. (ok and ("taken " .. tostring(f:IsGamePadStickEnabled())) or tostring(err)))
         CK:Print("stick test PASS on: walk and turn the camera, then /reload")
-    elseif mode == "blizz" then
-        -- The game's own stick listener (InputAxisBinding.lua), which its
-        -- flyouts use: our function for the right stick only, its left-stick
-        -- path left as it is (Blizzard's code answers true there)
-        local listener = _G.inputBindingAxisListener
-        if not (listener and listener.right) then
-            CK:Print("stick test BLIZZ: the game's listener isn't there")
-            return
-        end
-        self.blizzWas = self.blizzWas or { func = listener.right.func }
-        listener.right.func = function(x, y)
-            if not W.blizzSeen then
-                W.blizzSeen = true
-                W:Log(format("stick test blizz: right stick (%.2f, %.2f) kept", x or 0, y or 0))
-            end
-        end
-        local ok, err = pcall(listener.EnableGamePadStick, listener, true)
-        W:Log("stick test: blizz on, " .. (ok and ("taken " .. tostring(listener:IsGamePadStickEnabled())) or tostring(err)))
-        CK:Print("stick test BLIZZ on: walk and turn the camera, then /ec sticks off and /reload")
     elseif mode == "free" then
         W.freeSticks = true
         if self.view then self:TakeSticks(self.view, false) end
@@ -365,12 +346,6 @@ function W:StickTest(mode)
         CK:Print("stick test FREE on: open a wheel, walk and aim, then /reload")
     else
         W.freeSticks = nil
-        local listener = _G.inputBindingAxisListener
-        if self.blizzWas and listener then
-            listener.right.func = self.blizzWas.func
-            self.blizzWas, W.blizzSeen = nil, nil
-            pcall(listener.EnableGamePadStick, listener, (listener.left.func or listener.right.func) and true or false)
-        end
         if self.stickTest then
             pcall(self.stickTest.EnableGamePadStick, self.stickTest, false)
             self.stickTest:Hide()
