@@ -337,8 +337,9 @@ function W.StickMode()
 end
 
 -- What chooses in an open wheel (Wheels > Opening, asked): the right stick
--- ("stick"), or the mouse wheel ("scroll": a notch up lights the next filled
--- section clockwise, down counter-clockwise; the sticks are left alone, the
+-- ("stick"), or the mouse wheel ("scroll": a notch down lights the next
+-- filled section clockwise, up counter-clockwise (asked: that way round
+-- felt more natural); the sticks are left alone, the
 -- left one walks, the right one turns the camera as always)
 function W.Scroll()
     return CK.db ~= nil and settings().select == "scroll"
@@ -636,15 +637,15 @@ local FILLED = [[
     local filled = slot > 0 and owner:GetFrameRef("slot" .. slot):IsShown()
 ]]
 
--- The mouse wheel ("scroll"): a notch lights the next filled section, "UP"
--- clockwise, "DOWN" counter-clockwise, round the wheel (nothing lit yet:
--- from the top, or from the last section back)
+-- The mouse wheel ("scroll"): a notch lights the next filled section,
+-- "DOWN" clockwise, "UP" counter-clockwise, round the wheel (nothing lit
+-- yet: from the top, or from the last section back)
 local STEP = [[
     if down == false or not owner:IsShown() then return false end
     local wid = owner:GetAttribute("wheel") or "c"
     local n = owner:GetAttribute("ck-" .. wid .. "-" .. (owner:GetAttribute("page") or 1) .. "-n") or 0
     if n < 1 then return false end
-    local dir = button == "DOWN" and -1 or 1
+    local dir = button == "UP" and -1 or 1
     local cur = owner:GetAttribute("ck-aim") or 0
     if cur < 1 then cur = dir == 1 and 0 or n + 1 end
     for i = 1, n do
