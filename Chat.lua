@@ -251,6 +251,24 @@ local function slash(msg)
         CK.Vibration:Diagnose(arg)
     elseif cmd == "wheel" then
         CK.ConsumableWheel:Diagnose()
+    elseif cmd == "padcvars" then
+        -- (debug: every gamepad setting the client knows, with its value and
+        -- default, into the wheel's saved log)
+        local all = C_Console and C_Console.GetAllCommands and C_Console.GetAllCommands() or {}
+        local n = 0
+        for _, c in ipairs(all) do
+            local name = c.command or ""
+            if name:lower():find("gamepad", 1, true) then
+                local ok, value, default = pcall(function()
+                    local v = C_CVar.GetCVar(name)
+                    return v, C_CVar.GetCVarDefault and C_CVar.GetCVarDefault(name)
+                end)
+                CK.ConsumableWheel:Log(format("cvar %s = %s (default %s) %s", name, tostring(ok and value), tostring(ok and default),
+                    tostring(c.help or "")))
+                n = n + 1
+            end
+        end
+        CK:Print("%d gamepad settings logged, now /reload", n)
     elseif cmd == "fish" then
         CK.Vibration:TraceFishing()
     elseif cmd == "binds" then
