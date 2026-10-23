@@ -310,7 +310,49 @@ end
 -- The sticks while the wheel is open, and just after
 ---------------------------------------------------------------------------
 function W:TakeSticks(frame, on)
+    -- (debug: /ec sticks free, the wheel takes no stick at all)
+    if W.freeSticks and frame == self.view then on = false end
     if frame.EnableGamePadStick then pcall(frame.EnableGamePadStick, frame, on) end
+end
+
+-- (debug) /ec sticks pass | free | off: what the game lets an addon frame
+-- do with the sticks. "pass": a frame takes the sticks and answers true for
+-- both (every stick named in the log): can the character still walk and
+-- the camera turn? "free": the wheels take no stick at all. "off": back
+function W:StickTest(mode)
+    if mode == "pass" then
+        local f = self.stickTest
+        if not f then
+            f = CK.NewFrame("Frame", nil, UIParent)
+            f.seen = {}
+            f:SetScript("OnGamePadStick", function(frame, stick, x, y)
+                if not frame.seen[tostring(stick)] then
+                    frame.seen[tostring(stick)] = true
+                    W:Log(format("stick test: stick %q (%.2f, %.2f), answered true", tostring(stick), x or 0, y or 0))
+                end
+                return true
+            end)
+            self.stickTest = f
+        end
+        wipe(f.seen)
+        f:Show()
+        local ok, err = pcall(f.EnableGamePadStick, f, true)
+        W:Log("stick test: pass on, " .. (ok and ("taken " .. tostring(f:IsGamePadStickEnabled())) or tostring(err)))
+        CK:Print("stick test PASS on: walk and turn the camera, then /reload")
+    elseif mode == "free" then
+        W.freeSticks = true
+        if self.view then self:TakeSticks(self.view, false) end
+        W:Log("stick test: free on (wheels take no stick)")
+        CK:Print("stick test FREE on: open a wheel, walk and aim, then /reload")
+    else
+        W.freeSticks = nil
+        if self.stickTest then
+            pcall(self.stickTest.EnableGamePadStick, self.stickTest, false)
+            self.stickTest:Hide()
+        end
+        W:Log("stick test: off")
+        CK:Print("stick test off")
+    end
 end
 
 -- A frame that takes the sticks keeps the right one only, as the game's own
@@ -901,7 +943,14 @@ function W:Build()
     -- The right stick only: the left one goes on moving the character
     view:SetScript("OnGamePadStick", function(self, stick)
         W:Track()
-        return aimOnly(self, stick)
+        local pass = aimOnly(self, stick)
+        -- (debug: each stick's name as the game gives it, and our answer)
+        W.seenStick = W.seenStick or {}
+        if W.seenStick[tostring(stick)] == nil then
+            W.seenStick[tostring(stick)] = pass
+            W:Log(format("wheel stick %q answered %s", tostring(stick), tostring(pass)))
+        end
+        return pass
     end)
     -- The wheel, always in its 8 sections
     local bg = view:CreateTexture(nil, "BACKGROUND")

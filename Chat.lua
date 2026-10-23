@@ -251,6 +251,9 @@ local function slash(msg)
         CK.Vibration:Diagnose(arg)
     elseif cmd == "wheel" then
         CK.ConsumableWheel:Diagnose()
+    elseif cmd == "sticks" then
+        -- (debug: what the game lets an addon frame do with the sticks)
+        CK.ConsumableWheel:StickTest(arg)
     elseif cmd == "fish" then
         CK.Vibration:TraceFishing()
     elseif cmd == "binds" then
