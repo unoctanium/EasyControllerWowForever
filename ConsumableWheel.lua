@@ -313,6 +313,14 @@ function W:TakeSticks(frame, on)
     if frame.EnableGamePadStick then pcall(frame.EnableGamePadStick, frame, on) end
 end
 
+-- A frame that takes the sticks keeps the right one only, as the game's own
+-- radial menus do (Blizzard_RadialWheel.lua): its stick script answering
+-- true lets that stick through to the game, so the left one goes on moving
+-- the character while a wheel is open
+local function aimOnly(_, stick)
+    return stick ~= "Camera" and stick ~= "Right"
+end
+
 -- Held to show (Wheels > Opening): the stick lights, the key's release uses
 function W.Held()
     return CK.db ~= nil and settings().hold == true
@@ -328,36 +336,41 @@ local function aimStick(wheel)
     return wheel and wheel:GetAttribute("ck-stick") or 2
 end
 
--- The wheels take no stick (reported, checked in game): a frame that
--- takes the sticks takes both, whatever its stick script answers (the
--- game's own radial menus keep only the right one, but an addon's answer
--- is ignored), so the character couldn't walk while a wheel was open. Not
--- taken, the left stick walks; the right one would also turn the camera
--- while it aims: its speeds are set to 0 while a wheel is open, given back
--- when it closes (kept in the settings, so a crash or a reload gives them
--- back at the next login: RestoreSettings)
-local CAMERA_SPEEDS = { "GamePadCameraYawSpeed", "GamePadCameraPitchSpeed" }
+-- How far the stick that aims the wheel is pushed now (0 to 1)
+local function aimLength()
+    local state = C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetDeviceMappedState()
+    local stick = state and state.sticks and state.sticks[aimStick(W.frame)]
+    return stick and stick.len or 0
+end
 
-function W:HoldCamera(hold)
-    local s = settings()
-    local get = C_CVar and C_CVar.GetCVar or GetCVar
-    local set = C_CVar and C_CVar.SetCVar or SetCVar
-    if hold and not s.camera then
-        s.camera = {}
-        for _, cvar in ipairs(CAMERA_SPEEDS) do
-            local ok, value = pcall(get, cvar)
-            if ok and value ~= nil then
-                s.camera[cvar] = value
-                pcall(set, cvar, "0")
-            end
-        end
-    elseif not hold and s.camera then
-        for cvar, value in pairs(s.camera) do pcall(set, cvar, value) end
-        s.camera = nil
-    end
-    -- (debug: whether the game took it, in combat too)
-    local ok, yaw = pcall(get, CAMERA_SPEEDS[1])
-    W:Log(format("camera %s: yaw speed now %s", hold and "held" or "given back", ok and tostring(yaw) or "?"))
+-- After the wheel closes with its stick still pushed, the sticks are kept a
+-- moment, so the character doesn't walk off (or stand up from eating): until
+-- that stick is let go, at most HOLD_MAX. Players lost the character and the
+-- camera for seconds when they kept pushing (to walk on) or another stick or
+-- axis of their pad never read as let go: only the aiming stick counts now,
+-- and only for a moment.
+local HOLD_MAX = 0.4
+
+function W:BuildHold()
+    local hold = CK.NewFrame("Frame", nil, UIParent)
+    hold:SetAllPoints(UIParent)
+    hold:Hide()
+    hold.elapsed = 0
+    hold:SetScript("OnGamePadStick", aimOnly)
+    hold:SetScript("OnShow", function(self)
+        self.elapsed = 0
+        W:TakeSticks(self, true)
+    end)
+    hold:SetScript("OnHide", function(self) W:TakeSticks(self, false) end)
+    hold:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + elapsed
+        if self.elapsed > HOLD_MAX or aimLength() < 0.2 then self:Hide() end
+    end)
+    self.hold = hold
+end
+
+function W:HoldSticks()
+    if aimLength() >= 0.2 then self.hold:Show() end
 end
 
 -- What happened on the last openings and presses, for /ec wheel
@@ -881,8 +894,15 @@ function W:Build()
     local view = CK.NewFrame("Frame", nil, wheel)
     view:SetAllPoints()
     self.view = view
-    -- The sticks stay the game's (the left one walks); the camera held
-    -- still while it shows (HoldCamera)
+    -- The sticks: taken by this plain frame of ours while it shows (with the
+    -- wheel), like the game's own wheels, so the character and the camera
+    -- don't move (and food can be eaten: not while moving). Turned on each
+    -- time it shows; its stick script is needed for the game to give it them.
+    -- The right stick only: the left one goes on moving the character
+    view:SetScript("OnGamePadStick", function(self, stick)
+        W:Track()
+        return aimOnly(self, stick)
+    end)
     -- The wheel, always in its 8 sections
     local bg = view:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("CENTER")
@@ -914,11 +934,14 @@ function W:Build()
     view.pages:SetPoint("TOP", view.help, "BOTTOM", 0, -4)
     view:SetScript("OnUpdate", function() W:Track() end)
     view:SetScript("OnShow", function()
-        W:HoldCamera(true)
+        W:TakeSticks(view, true)
+        W.hold:Hide()
         W:Paint()
         W:Log("open")
     end)
-    view:SetScript("OnHide", function() W:HoldCamera(false) end)
+    -- Closed with a stick still pushed: held until it is let go, so the
+    -- character doesn't walk off (or stand up from eating)
+    view:SetScript("OnHide", function() W:HoldSticks() end)
     -- Closed (its keys let go in its secure code, which our binding hooks
     -- don't see): the replaced buttons it held back are bound again
     wheel:HookScript("OnHide", function()
@@ -933,6 +956,7 @@ function W:Build()
             end
         end)
     end)
+    self:BuildHold()
 
     self.segments, self.buttons = {}, {}
     for i = 1, SEGMENTS do
@@ -2331,9 +2355,7 @@ function W:RestoreSettings()
         setCVar("GamePadStickAxisButtons", s.stickButtonsWas)
         s.stickButtonsWas = nil
     end
-    -- The camera's speeds a wheel held (left by a crash or a reload), but
-    -- not while one is open
-    if s.camera and not (self.frame and self.frame:IsShown()) then
+    if s.camera then
         for cvar, value in pairs(s.camera) do setCVar(cvar, value) end
         s.camera = nil
     end
