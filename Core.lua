@@ -98,6 +98,9 @@ local DEFAULTS = {
         -- camera turns as you aim), "strafe" (taken: the camera still, the
         -- left stick walks digitally), "still" (taken: you stand still)
         sticks = "strafe",
+        -- Pressed: a flick of the right stick let go uses what it aims at
+        -- (asked; off: the stick lights, A uses, B closes)
+        stickRelease = false,
         -- The usable items' wheel: the items hidden from it ({ [item ID] =
         -- true }, false once shown again); the hearthstone by default
         usableHidden = { [6948] = true },

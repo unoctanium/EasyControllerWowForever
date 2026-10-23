@@ -893,6 +893,15 @@ local function wheelOpenRows(b)
             s.hold = v
             CK.ConsumableWheel:Fill()
         end })
+    -- Pressed: the right stick let go uses (asked; off by default: it
+    -- lights, A uses). Held to show, the key's release uses
+    b.check({ id = "w_letgo", label = L.LBL_WHEEL_LETGO, indent = true, disabled = s.hold == true,
+        tip = L.TIP_WHEEL_LETGO,
+        get = function() return s.stickRelease == true end,
+        set = function(v)
+            s.stickRelease = v
+            CK.ConsumableWheel:Fill()
+        end })
     -- The sticks while a wheel is open (asked): walk, strafe or stand still
     local W = CK.ConsumableWheel
     b.choice({ id = "w_sticks", label = L.LBL_WHEEL_STICKS, tip = L.TIP_WHEEL_STICKS,

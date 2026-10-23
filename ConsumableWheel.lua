@@ -322,6 +322,18 @@ function W.Held()
     return CK.db ~= nil and settings().hold == true
 end
 
+-- Pressed, a flick of the right stick let go uses what it aims at (Wheels >
+-- Opening, asked; off by default: the stick lights, A uses, B closes)
+function W.LetGo()
+    return CK.db ~= nil and not W.Held() and settings().stickRelease == true
+end
+
+-- The stick only lights a section (kept when it goes back to the middle):
+-- held to show, or pressed without letting go to use
+function W.Lights()
+    return CK.db ~= nil and not W.LetGo()
+end
+
 -- The sticks while a wheel is open (Wheels > Opening, asked): "walk" the
 -- wheel takes no stick (you walk as always, the right stick turns the
 -- camera as it aims: the game can't hold one stick and not the other),
@@ -855,8 +867,9 @@ local LET_GO = [[
     if not letGo then return false end
     -- Let go: every direction counted released
     for key in gmatch(keys, "([^,]+),") do owner:SetAttribute("ck-held-" .. key, 0) end
-    -- Held to show: lit only, the key's release uses it
-    if owner:GetAttribute("ck-hold") then return false end
+    -- Lit only: held to show (the key's release uses it), or pressed
+    -- without letting go to use (A uses it)
+    if not owner:GetAttribute("ck-letgo") then return false end
     local slot = owner:GetAttribute("ck-aim") or 0
     if slot < 1 then return false end
     ]] .. FILLED .. [[
@@ -1612,6 +1625,8 @@ function W:Fill()
     -- Hold its key to show it, the stick lights, let go of the key to use
     -- (option)
     wheel:SetAttribute("ck-hold", W.Held() or nil)
+    -- Pressed: a flick let go uses (option)
+    wheel:SetAttribute("ck-letgo", W.LetGo() or nil)
     self.lists = {}
     -- The consumables: by kind, 7 a page (around EXIT)
     local items = settings().enabled and self:Scan() or {}
@@ -1736,10 +1751,12 @@ end
 
 -- The help under a wheel: aim with the right stick; pressed, a flick let go
 -- uses (`pressed`), held, the key let go uses (`held`); B closes
-local function helpText(pressed, held)
+local function helpText(pressed, held, use)
     local h = function(key) return CK:GlyphMarkup(key, 14) end
     if W.Held() then
         return format("%s %s   %s   %s %s", h("RS"), L.WHEEL_AIM, held, h("B"), L.WHEEL_CLOSE)
+    elseif not W.LetGo() then
+        return format("%s %s   %s %s   %s %s", h("RS"), L.WHEEL_AIM, h("A"), use, h("B"), L.WHEEL_CLOSE)
     end
     return format("%s %s   %s %s", h("RS"), pressed, h("B"), L.WHEEL_CLOSE)
 end
@@ -1806,7 +1823,7 @@ function W:Paint()
     else
         self.view.pages:SetText("")
     end
-    self.view.help:SetText(helpText(L.WHEEL_LETGO, L.WHEEL_RELEASE_USE))
+    self.view.help:SetText(helpText(L.WHEEL_LETGO, L.WHEEL_RELEASE_USE, L.WHEEL_USE))
     -- Not "nothing aimed" (nil): the banner is written, even the first time
     self.aimed = false
     self:Track()
@@ -1847,9 +1864,10 @@ function W:PlaceSection(seg, i, n)
 end
 
 -- The section to light, of `n`: the one the right stick points at (past
--- half its course), any of them, EXIT and the empty ones too; else, held
--- to show, the one the secure code keeps for the key's release ("ck-aim"),
--- so what is lit is what will be used
+-- half its course), any of them, EXIT and the empty ones too; else, when
+-- the stick only lights (held to show, or pressed without letting go to
+-- use), the one the secure code keeps for the key's release or A
+-- ("ck-aim"), so what is lit is what will be used
 function W:AimedSection(n)
     local state = C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetDeviceMappedState()
     local stick = state and state.sticks and state.sticks[aimStick(self.frame)]
@@ -1862,7 +1880,7 @@ function W:AimedSection(n)
         end
         return best
     end
-    if W.Held() then
+    if W.Lights() then
         local kept = self.frame:GetAttribute("ck-aim") or 0
         if kept > 0 and kept <= n then return kept end
     end
@@ -1898,7 +1916,8 @@ function W:Track()
         self.ticked = nil
         -- A wheel of the player's: its name
         view.name:SetText(mine and CK.MyWheels and CK.MyWheels:Name(mine) or L.WHEEL_NOTHING)
-        view.count:SetText(format(W.Held() and L.WHEEL_NOTHING_HINT_HOLD or L.WHEEL_NOTHING_HINT, W.StickWords()))
+        view.count:SetText(format(W.Held() and L.WHEEL_NOTHING_HINT_HOLD
+            or (W.LetGo() and L.WHEEL_NOTHING_HINT or L.MYWHEEL_NOTHING_HINT), W.StickWords()))
         return
     end
     if not item then
@@ -2142,7 +2161,7 @@ function W:PaintParty()
         end
     end
     self:RangeParty(true)
-    pv.help:SetText(helpText(L.PARTY_CAST, L.PARTY_RELEASE_CAST))
+    pv.help:SetText(helpText(L.PARTY_CAST, L.PARTY_RELEASE_CAST, L.PARTY_A_CAST))
     -- Not "nothing aimed" (nil): the banner is written, even the first time
     self.aimed = false
     self:TrackParty()
@@ -2211,7 +2230,7 @@ function W:TrackParty()
     pv.name:SetText(list[1] and W.EntryName(list[1]) or "")
     if not i then
         self.ticked = nil
-        pv.count:SetText(W.Held() and L.PARTY_HINT_HOLD or L.PARTY_HINT)
+        pv.count:SetText(W.Held() and L.PARTY_HINT_HOLD or (W.LetGo() and L.PARTY_HINT or L.PARTY_HINT_A))
         return
     end
     -- Turned to the section, as the game's flyouts turn theirs (angles

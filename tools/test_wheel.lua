@@ -8,7 +8,7 @@ local env = setmetatable({}, { __index = function(_, k) local g = _G[k]; if g ~=
 local CK = { L = setmetatable({}, { __index = function(_, k) return k end }) }
 -- The snippets are the file's locals: handed out at its end
 local file = assert(io.open("ConsumableWheel.lua")):read("*a")
-local chunk = assert(loadstring(file .. "\nCK._snips = { TOGGLE = TOGGLE, USE = USE, LET_GO = LET_GO, DONE = DONE }", "ConsumableWheel.lua"))
+local chunk = assert(loadstring(file .. "\nCK._snips = { TOGGLE = TOGGLE, USE = USE, LET_GO = LET_GO, DONE = DONE, CLOSE = CLOSE }", "ConsumableWheel.lua"))
 setfenv(chunk, env)
 chunk("EasyController", CK)
 local SN = CK._snips
@@ -91,8 +91,9 @@ local function check(what, cond)
     if not cond then FAILED = true end
 end
 
--- PRESS MODE
+-- PRESS MODE, a flick let go uses (option)
 owner:SetAttribute("ck-hold", nil)
+owner:SetAttribute("ck-letgo", true)
 run(SN.TOGGLE, toggle, "LeftButton", true)
 check("press opens wheel 1", owner:IsShown() and owner:GetAttribute("wheel") == "1")
 check("slot 1 & 3 shown, 5 hidden", slots[1].shown and slots[3].shown and not slots[5].shown and not slots[2].shown)
@@ -148,6 +149,24 @@ check("A with stick up fires slot 1", r[1] == "s1")
 setStick(0, -1); r = { run(SN.USE, handle("use"), "LeftButton", true) }
 check("A with stick on EXIT closes", r[1] == false and not owner:IsShown())
 
+-- PRESS MODE, the stick only lights, A uses (the default)
+owner:SetAttribute("ck-letgo", nil)
+run(SN.TOGGLE, toggle, "LeftButton", true); run(SN.TOGGLE, toggle, "LeftButton", false)
+r = flick("PADRSTICKRIGHT", 1, 0)
+check("lights: a flick let go only lights (no fire, still open)", r == false and owner:IsShown() and owner:GetAttribute("ck-aim") == 3)
+r = { run(SN.USE, handle("use"), "LeftButton", true) }
+check("lights: A uses the lit slot 3 (stick back in the middle)", r[1] == "s3")
+run(SN.DONE, letgo)
+run(SN.TOGGLE, toggle, "LeftButton", true); run(SN.TOGGLE, toggle, "LeftButton", false)
+flick("PADRSTICKDOWN", 0, -1)
+check("lights: EXIT lit, still open", owner:IsShown() and owner:GetAttribute("ck-aim") == 5)
+r = { run(SN.USE, handle("use"), "LeftButton", true) }
+check("lights: A on EXIT closes, nothing used", r[1] == false and not owner:IsShown())
+run(SN.TOGGLE, toggle, "LeftButton", true); run(SN.TOGGLE, toggle, "LeftButton", false)
+flick("PADRSTICKRIGHT", 1, 0)
+run(SN.CLOSE, handle("close"), "LeftButton", true)
+check("lights: B closes, nothing used", not owner:IsShown())
+
 -- HOLD MODE
 owner:SetAttribute("ck-hold", true)
 run(SN.TOGGLE, toggle, "LeftButton", true)
@@ -175,8 +194,9 @@ r = run(SN.TOGGLE, toggle, "ckup", nil)
 check("hold via router: ckup release fires lit slot 3", r == "s3")
 run(SN.DONE, letgo)
 
--- PARTY (press mode)
+-- PARTY (press mode, a flick let go uses)
 owner:SetAttribute("ck-hold", nil)
+owner:SetAttribute("ck-letgo", true)
 run(SN.TOGGLE, ptoggle, "LeftButton", true); run(SN.TOGGLE, ptoggle, "LeftButton", false)
 check("party: 6 sections, you + party1 shown, absent hidden", slots[1].shown and slots[2].shown and not slots[3].shown and not slots[4].shown)
 local a = math.rad(60)
