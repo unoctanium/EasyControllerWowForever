@@ -1203,15 +1203,12 @@ local AXES = {
         posStop = "MoveViewDownStop", cvar = "GamePadCameraPitchSpeed" },
 }
 
--- `rest`, `step`: the stick's part left out, the speed change that counts
--- (staying seated: 0.15 and 0.05; a wheel's counter-turn: finer)
-local function turn(frame, name, value, rest, step)
+local function turn(frame, name, value)
     local axis = AXES[name]
-    rest, step = rest or CAMERA_REST, step or 0.05
-    local dir = (value > rest and 1) or (value < -rest and -1) or 0
+    local dir = (value > CAMERA_REST and 1) or (value < -CAMERA_REST and -1) or 0
     local speed = dir ~= 0 and math.abs(value) * cameraSpeed(axis.cvar) or 0
     local was = frame.camera[name]
-    if was.dir == dir and math.abs(was.speed - speed) < step then return end
+    if was.dir == dir and math.abs(was.speed - speed) < 0.05 then return end
     if was.dir ~= dir and was.dir ~= 0 then
         local stop = _G[was.dir < 0 and axis.negStop or axis.posStop]
         if stop then stop() end
@@ -1242,10 +1239,7 @@ W.StopCamera = stopCamera
 
 -- A wheel open (it takes no stick): the camera turned the other way, as
 -- fast as the right stick turns it, so it stays still while the stick aims
--- (the game's inverted axes followed). Finer than staying seated: any part
--- of the stick the game reads, each speed change (reported: the camera
--- wiggled with the seated turn's 0.15 rest and 0.05 steps)
-local COUNTER_REST, COUNTER_STEP = 0.01, 0.005
+-- (the game's inverted axes followed)
 local function inverted(cvar)
     local get = C_CVar and C_CVar.GetCVarBool
     return get and get(cvar) and -1 or 1
@@ -1253,8 +1247,8 @@ end
 W.CounterCamera = function(frame)
     if not frame.camera then stopCamera(frame) end
     local x, y = cameraStick()
-    turn(frame, "yaw", -x * inverted("gamepadInvertYaw"), COUNTER_REST, COUNTER_STEP)
-    turn(frame, "pitch", -y * inverted("gamepadInvertPitch"), COUNTER_REST, COUNTER_STEP)
+    turn(frame, "yaw", -x * inverted("gamepadInvertYaw"))
+    turn(frame, "pitch", -y * inverted("gamepadInvertPitch"))
 end
 
 -- A menu or window that needs the sticks: the game's radial menu (Start),
