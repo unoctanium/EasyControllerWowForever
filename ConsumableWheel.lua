@@ -1253,10 +1253,8 @@ end
 W.CounterCamera = function(frame)
     if not frame.camera then stopCamera(frame) end
     local x, y = cameraStick()
-    -- (debug: each axis scaled, /ec camfactor)
-    local s = settings()
-    turn(frame, "yaw", -x * inverted("gamepadInvertYaw") * (s.counterYaw or 1), COUNTER_REST, COUNTER_STEP)
-    turn(frame, "pitch", -y * inverted("gamepadInvertPitch") * (s.counterPitch or 1), COUNTER_REST, COUNTER_STEP)
+    turn(frame, "yaw", -x * inverted("gamepadInvertYaw"), COUNTER_REST, COUNTER_STEP)
+    turn(frame, "pitch", -y * inverted("gamepadInvertPitch"), COUNTER_REST, COUNTER_STEP)
 end
 
 -- A menu or window that needs the sticks: the game's radial menu (Start),
