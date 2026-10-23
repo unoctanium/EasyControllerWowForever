@@ -251,10 +251,21 @@ local function slash(msg)
         CK.Vibration:Diagnose(arg)
     elseif cmd == "wheel" then
         CK.ConsumableWheel:Diagnose()
+    elseif cmd == "camfactor" then
+        -- (debug: the wheel's camera counter-turn, each axis scaled:
+        -- /ec camfactor <yaw> <pitch>, 1 1 by default)
+        local yaw, pitch = arg:match("^([%d%.]+)%s*([%d%.]*)$")
+        local w = CK.db.settings.wheel
+        if yaw then
+            w.counterYaw, w.counterPitch = tonumber(yaw), tonumber(pitch) or w.counterPitch or 1
+        end
+        CK:Print("camera counter-turn: yaw x%s, pitch x%s", tostring(w.counterYaw or 1), tostring(w.counterPitch or 1))
+        CK.ConsumableWheel:Log(format("camfactor yaw %s pitch %s", tostring(w.counterYaw or 1), tostring(w.counterPitch or 1)))
     elseif cmd == "padcvars" then
         -- (debug: every gamepad setting the client knows, with its value and
         -- default, into the wheel's saved log)
-        local all = C_Console and C_Console.GetAllCommands and C_Console.GetAllCommands() or {}
+        local getAll = ConsoleGetAllCommands or (C_Console and C_Console.GetAllCommands)
+        local all = getAll and getAll() or {}
         local n = 0
         for _, c in ipairs(all) do
             local name = c.command or ""
