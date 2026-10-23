@@ -390,6 +390,24 @@ function W:DropWalk()
     end
 end
 
+-- "strafe": the movement actions are the character's (forward is where it
+-- faces), the gamepad's walk the camera's (reported: walking toward the
+-- camera, then the wheel opened, the stick left strafed right). Mouse-look,
+-- as long as the wheel walks: the character turns to the camera, the
+-- movement actions go the camera's way (experimental: whether the game
+-- lets an addon start it, logged)
+function W:FaceCamera(on)
+    if on and W.StickMode() == "strafe" and MouselookStart and not (IsMouselooking and IsMouselooking()) then
+        local ok, err = pcall(MouselookStart)
+        self.mouselook = ok and IsMouselooking and IsMouselooking() or nil
+        W:Log(format("mouselook start: %s, looking %s", ok and "ok" or tostring(err), tostring(IsMouselooking and IsMouselooking())))
+    elseif not on and self.mouselook then
+        self.mouselook = nil
+        if MouselookStop then pcall(MouselookStop) end
+        W:Log("mouselook stop, looking " .. tostring(IsMouselooking and IsMouselooking()))
+    end
+end
+
 function W:BuildHold()
     local hold = CK.NewFrame("Frame", nil, UIParent)
     hold:SetAllPoints(UIParent)
@@ -402,6 +420,7 @@ function W:BuildHold()
     end)
     hold:SetScript("OnHide", function(self)
         W:TakeSticks(self, false)
+        W:FaceCamera(false)
         W:DropWalk()
     end)
     hold:SetScript("OnUpdate", function(self, elapsed)
@@ -416,7 +435,11 @@ end
 function W:HoldSticks()
     if W.StickMode() == "walk" then return end
     self.hold.walking = W.StickMode() == "strafe" and walkLength() >= WALK_REST
-    if self.hold.walking or aimLength() >= 0.2 then self.hold:Show() end
+    if self.hold.walking or aimLength() >= 0.2 then
+        self.hold:Show()
+    end
+    -- (walking on through the bindings: mouse-look kept until let go)
+    if not self.hold.walking then self:FaceCamera(false) end
 end
 
 -- What happened on the last openings and presses, for /ec wheel
@@ -1012,6 +1035,7 @@ function W:Build()
         -- ("walk": the sticks stay the game's)
         W:TakeSticks(view, W.StickMode() ~= "walk")
         W.hold:Hide()
+        W:FaceCamera(true)
         W:Paint()
         W:Log("open")
     end)
