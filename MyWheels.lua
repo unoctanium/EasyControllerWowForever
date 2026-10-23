@@ -3,8 +3,7 @@ local L = CK.L
 
 -- Module "my wheels": wheels of the player's own, drawn and handled like the
 -- consumables wheel (ConsumableWheel.lua shows them all): 8 slots each, the
--- bottom one always EXIT (it closes the wheel, never filled), the 7 others
--- the spells, items and macros the player picks, up to 8 wheels. Each has a key
+-- spells, items and macros the player picks, up to 8 wheels. Each has a key
 -- of its own: the Gamepad tab's Items list (any button), or the game's Key
 -- Bindings ("CLICK ControllerKeyboardMyWheelN"). Made, named and filled in
 -- the Wheels tab: the list of wheels, and each wheel's editor (its slots
@@ -14,9 +13,6 @@ local MW = {}
 CK.MyWheels = MW
 
 local SLOTS = 8
--- The bottom slot: EXIT, the same on every wheel (ConsumableWheel.lua)
-local EXIT = 5
-MW.FILLABLE = SLOTS - 1
 -- The lists a slot takes from (the Gamepad tab's)
 local TABS = { "spells", "items", "macros" }
 
@@ -43,7 +39,7 @@ end
 function MW:Count(w)
     local n = 0
     for i = 1, SLOTS do
-        if w.slots[i] and i ~= EXIT then n = n + 1 end
+        if w.slots[i] then n = n + 1 end
     end
     return n
 end
@@ -64,7 +60,7 @@ function MW:Entries(id)
     local w = self:Get(id)
     local entries = {}
     for i = 1, SLOTS do
-        local kind, value = ((i ~= EXIT and w and w.slots[i]) or ""):match("^(%a+):(.+)$")
+        local kind, value = ((w and w.slots[i]) or ""):match("^(%a+):(.+)$")
         if kind == "spell" or kind == "item" then
             entries[i] = { kind = kind, id = tonumber(value) }
         elseif kind == "macro" and GetMacroInfo(value) then
@@ -110,7 +106,7 @@ end
 
 function MW:SetSlot(id, slot, action)
     local w = self:Get(id)
-    if not w or slot == EXIT then return end
+    if not w then return end
     w.slots[slot] = action
     changed()
 end
@@ -285,7 +281,7 @@ function G:Render(page, focused)
                 local w = cell.wheel
                 c:SetAlpha(1)
                 c.name:SetText(w.name)
-                c.count:SetText(format("%d/%d", MW:Count(w), MW.FILLABLE))
+                c.count:SetText(format("%d/%d", MW:Count(w), SLOTS))
                 for n, d in ipairs(c.dots) do
                     local kind = (w.slots[n] or ""):match("^(%a+):")
                     local filled = KIND_COLOR[kind] and KC[KIND_COLOR[kind]]
@@ -293,9 +289,8 @@ function G:Render(page, focused)
                     local fill = filled or KC.controlBg
                     d.edge:SetVertexColor(edge[1], edge[2], edge[3])
                     d.fill:SetVertexColor(fill[1], fill[2], fill[3])
-                    -- (EXIT: no dot, nothing goes there)
-                    d.edge:SetShown(n ~= EXIT)
-                    d.fill:SetShown(n ~= EXIT)
+                    d.edge:Show()
+                    d.fill:Show()
                 end
                 local bound = MW:BoundText(w.id, 12)
                 c.sub:SetText(bound or L.LBL_NO_BUTTON)
@@ -484,7 +479,7 @@ function E:Build(parent)
         local s = K.Slot(zone, SLOT_SIZE, ICON_SIZE)
         s:SetPoint("CENTER", zone, "TOPLEFT", x, -y)
         s:SetScript("OnClick", function(_, button)
-            if MW.renaming or i == EXIT then return end
+            if MW.renaming then return end
             C:Disarm()
             E.slot = i
             if button == "RightButton" then
@@ -709,21 +704,17 @@ function E:Button(i)
     end
 end
 
--- The slot after (`step` 1) or before (-1) `slot`, around the wheel, EXIT
--- left out
+-- The slot after (`step` 1) or before (-1) `slot`, around the wheel
 function MW.NextSlot(slot, step)
-    slot = (slot - 1 + step) % SLOTS + 1
-    if slot == EXIT then slot = (slot - 1 + step) % SLOTS + 1 end
-    return slot
+    return (slot - 1 + step) % SLOTS + 1
 end
 
--- Around the wheel: the nearest slot that way, EXIT left out (none down:
--- the buttons)
+-- Around the wheel: the nearest slot that way (none down: the buttons)
 function E:Nearest(dir)
     local fx, fy = slotPoint(self.slot)
     local best, bestScore
     for i = 1, 8 do
-        if i ~= self.slot and i ~= EXIT then
+        if i ~= self.slot then
             local x, y = slotPoint(i)
             local dx, dy = x - fx, y - fy
             local main, cross
@@ -765,8 +756,7 @@ function E:Press(name)
         if name == "LEFT" or name == "RIGHT" then
             self.btn = math.max(1, math.min(3, self.btn + (name == "LEFT" and -1 or 1)))
         elseif name == "UP" then
-            -- (above the buttons: EXIT, never chosen; the slot beside it)
-            self.zone, self.slot = "slots", 4
+            self.zone, self.slot = "slots", 5
         elseif name == "A" then
             self:Button(self.btn)
             return true
@@ -824,25 +814,18 @@ function E:Render()
     if not (f and w) then return end
     f:Show()
     f.name:SetText(w.name)
-    f.count:SetText(format("%d / %d", MW:Count(w), MW.FILLABLE))
+    f.count:SetText(format("%d / %d", MW:Count(w), SLOTS))
     local pos = positions()
     for i, s in ipairs(f.slots) do
         local label = f.labels[i]
-        if i == EXIT then
-            -- EXIT: its cross, the same on every wheel
-            s:SetLook({ icon = { texture = CK.ConsumableWheel.EXIT_ICON } })
-            label:SetText(L.WHEEL_EXIT)
-            label:SetTextColor(KC.grey[1], KC.grey[2], KC.grey[3])
-        else
-            local action = w.slots[i]
-            local focus = self.zone == "slots" and i == self.slot
-            local target = self.zone == "picker" and i == self.slot
-            s:SetLook({ icon = action and CK.Mapping:ActionIcon(action), discColor = action and KC.iconBg or nil,
-                plus = not action, glow = focus, dash = target })
-            label:SetText(action and (CK.Mapping:ActionName(action) or action) or pos[i] or "")
-            local c = (focus or target) and KC.focus or (action and KC.cream or KC.grey)
-            label:SetTextColor(c[1], c[2], c[3])
-        end
+        local action = w.slots[i]
+        local focus = self.zone == "slots" and i == self.slot
+        local target = self.zone == "picker" and i == self.slot
+        s:SetLook({ icon = action and CK.Mapping:ActionIcon(action), discColor = action and KC.iconBg or nil,
+            plus = not action, glow = focus, dash = target })
+        label:SetText(action and (CK.Mapping:ActionName(action) or action) or pos[i] or "")
+        local c = (focus or target) and KC.focus or (action and KC.cream or KC.grey)
+        label:SetTextColor(c[1], c[2], c[3])
     end
     -- The button it is on
     local bound = MW:BoundText(w.id, 14)
@@ -917,12 +900,6 @@ end
 
 function MW:Init()
     self:UpdateBindingNames()
-    -- Wheels that were full when the bottom slot became EXIT (Core.lua):
-    -- what was there, told once
-    for _, lost in ipairs(CK.exitDropped or {}) do
-        CK:Print(L.MYWHEEL_EXIT_DROPPED, lost.wheel, CK.Mapping:ActionName(lost.action) or lost.action)
-    end
-    CK.exitDropped = nil
     -- The panel closed (B, combat) while a name was being typed: cancelled;
     -- it opens on the list of wheels next time
     hooksecurefunc(C, "Close", function()

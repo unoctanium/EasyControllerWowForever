@@ -228,22 +228,6 @@ function CK.CleanEntries(s)
                     if type(w.slots[i]) == "string" then slots[i] = w.slots[i] end
                 end
             end
-            -- The bottom slot is every wheel's EXIT: what was put
-            -- there goes to the first empty slot; a full wheel loses it (the
-            -- player told once, MyWheels.lua)
-            if slots[5] then
-                for _, i in ipairs({ 1, 2, 3, 4, 6, 7, 8 }) do
-                    if not slots[i] then
-                        slots[i], slots[5] = slots[5], nil
-                        break
-                    end
-                end
-                if slots[5] then
-                    CK.exitDropped = CK.exitDropped or {}
-                    table.insert(CK.exitDropped, { wheel = w.name, action = slots[5] })
-                    slots[5] = nil
-                end
-            end
             w.slots = slots
             wheels[#wheels + 1] = w
         end
