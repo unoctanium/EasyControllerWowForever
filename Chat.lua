@@ -261,6 +261,54 @@ local function slash(msg)
         end
         CK:Print("camera counter-turn: yaw x%s, pitch x%s", tostring(w.counterYaw or 1), tostring(w.counterPitch or 1))
         CK.ConsumableWheel:Log(format("camfactor yaw %s pitch %s", tostring(w.counterYaw or 1), tostring(w.counterPitch or 1)))
+    elseif cmd == "padconfig" then
+        -- (debug: the game's gamepad configurations, their right stick's
+        -- direction keys' threshold. /ec padconfig: logged; /ec padconfig
+        -- 0.8: raised; /ec padconfig reset: given back)
+        local G, W = C_GamePad, CK.ConsumableWheel
+        local function try(what, f, ...)
+            local ok, a = pcall(f, ...)
+            if not ok then W:Log(format("padconfig: %s refused: %s", what, tostring(a))) end
+            return ok, a
+        end
+        local raw = G.GetActiveDeviceID and G.GetDeviceRawState and G.GetDeviceRawState(G.GetActiveDeviceID())
+        if raw then W:Log(format("padconfig: active device %s vendor %s product %s", tostring(raw.name), tostring(raw.vendorID), tostring(raw.productID))) end
+        local db = CK.db
+        local value = tonumber(arg)
+        local changed = false
+        for _, id in ipairs(G.GetAllConfigIDs and G.GetAllConfigIDs() or {}) do
+            local ok, cfg = try("GetConfig", G.GetConfig, id)
+            if ok and cfg then
+                local key = format("%s:%s", tostring(id.vendorID), tostring(id.productID))
+                W:Log(format("padconfig %s (%s)", key, tostring(cfg.name)))
+                for i, a in ipairs(cfg.axisConfigs or {}) do
+                    local right = tostring(a.buttonPos or ""):find("PADRSTICK", 1, true) or tostring(a.buttonNeg or ""):find("PADRSTICK", 1, true)
+                    W:Log(format("  axis %s deadzone %s threshold %s %s/%s", tostring(a.axis), tostring(a.deadzone),
+                        tostring(a.buttonThreshold), tostring(a.buttonPos), tostring(a.buttonNeg)))
+                    if right and (value or arg == "reset") then
+                        db.padThresholdWas = db.padThresholdWas or {}
+                        local slot = key .. ":" .. i
+                        if value then
+                            if db.padThresholdWas[slot] == nil then db.padThresholdWas[slot] = a.buttonThreshold or false end
+                            a.buttonThreshold = value
+                        elseif db.padThresholdWas[slot] ~= nil then
+                            a.buttonThreshold = db.padThresholdWas[slot] or nil
+                            db.padThresholdWas[slot] = nil
+                        end
+                        changed = true
+                    end
+                end
+                for _, st in ipairs(cfg.stickConfigs or {}) do
+                    W:Log(format("  stick %s axes %s/%s deadzone %s", tostring(st.stick), tostring(st.axisX), tostring(st.axisY), tostring(st.deadzone)))
+                end
+                if changed then try("SetConfig", G.SetConfig, cfg) end
+            end
+        end
+        if changed then
+            local ok = try("ApplyConfigs", G.ApplyConfigs)
+            W:Log("padconfig: applied " .. tostring(ok))
+        end
+        CK:Print("pad configurations logged%s, now /reload", changed and " (changed)" or "")
     elseif cmd == "padcvars" then
         -- (debug: every gamepad setting the client knows, with its value and
         -- default, into the wheel's saved log)
