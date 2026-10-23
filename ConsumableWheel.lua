@@ -348,22 +348,7 @@ function W:StickTest(mode)
             CK:Print("stick test BLIZZ: the game's listener isn't there")
             return
         end
-        self.blizzWas = self.blizzWas or { func = listener.right.func, parent = listener:GetParent() }
-        -- (it has no parent: under UIParent, as the frame of test "pass"
-        -- that got the sticks; every event it gets logged)
-        listener:SetParent(UIParent)
-        listener:Show()
-        if not self.blizzHooked then
-            self.blizzHooked = true
-            listener:HookScript("OnGamePadStick", function(_, stick, x, y)
-                if W.blizzWas and not (W.blizzNames or {})[tostring(stick)] then
-                    W.blizzNames = W.blizzNames or {}
-                    W.blizzNames[tostring(stick)] = true
-                    W:Log(format("stick test blizz: listener got %q (%.2f, %.2f)", tostring(stick), x or 0, y or 0))
-                end
-            end)
-        end
-        W.blizzNames = nil
+        self.blizzWas = self.blizzWas or { func = listener.right.func }
         listener.right.func = function(x, y)
             if not W.blizzSeen then
                 W.blizzSeen = true
@@ -383,7 +368,6 @@ function W:StickTest(mode)
         local listener = _G.inputBindingAxisListener
         if self.blizzWas and listener then
             listener.right.func = self.blizzWas.func
-            listener:SetParent(self.blizzWas.parent)
             self.blizzWas, W.blizzSeen = nil, nil
             pcall(listener.EnableGamePadStick, listener, (listener.left.func or listener.right.func) and true or false)
         end
