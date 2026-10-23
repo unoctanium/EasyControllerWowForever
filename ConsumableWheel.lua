@@ -316,6 +316,18 @@ local function aimStick(wheel)
     return wheel:GetAttribute(isParty(wheel:GetAttribute("wheel")) and "ck-pstick" or "ck-stick") or 1
 end
 
+-- A frame that takes the sticks keeps only the one that aims the open
+-- wheel, as the game's own radial menus do (Blizzard_RadialWheel.lua): its
+-- stick script answering true lets that stick through to the game. Aimed
+-- with the right stick, the left one goes on moving the character; aimed
+-- with the left one, the right one goes on turning the camera
+local function aimOnly(_, stick)
+    local wheel = W.frame
+    local right = W.AimRight() or (wheel and isParty(wheel:GetAttribute("wheel")))
+    if right then return stick ~= "Camera" and stick ~= "Right" end
+    return stick ~= "Movement" and stick ~= "Left"
+end
+
 -- How far the stick that aims the wheel is pushed now (0 to 1)
 local function aimLength()
     local state = C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetDeviceMappedState()
@@ -336,7 +348,7 @@ function W:BuildHold()
     hold:SetAllPoints(UIParent)
     hold:Hide()
     hold.elapsed = 0
-    hold:SetScript("OnGamePadStick", function() end)
+    hold:SetScript("OnGamePadStick", aimOnly)
     hold:SetScript("OnShow", function(self)
         self.elapsed = 0
         W:TakeSticks(self, true)
@@ -881,7 +893,11 @@ function W:Build()
     -- wheel), like the game's own wheels, so the character and the camera
     -- don't move (and food can be eaten: not while moving). Turned on each
     -- time it shows; its stick script is needed for the game to give it them.
-    view:SetScript("OnGamePadStick", function() W:Track() end)
+    -- Only the stick that aims: the other one stays the game's
+    view:SetScript("OnGamePadStick", function(self, stick)
+        W:Track()
+        return aimOnly(self, stick)
+    end)
     -- The wheel in as many sections as the page holds (set when drawn)
     local bg = view:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("CENTER")
