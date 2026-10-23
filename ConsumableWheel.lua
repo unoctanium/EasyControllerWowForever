@@ -68,6 +68,9 @@ local PAGE_SLOTS = { 1, 2, 3, 4, 6, 7, 8 }
 local PER_PAGE = #PAGE_SLOTS
 local MAX = PER_PAGE * PAGES
 local AIM = 0.5     -- the stick aims past half its course
+-- A flick is let go (pressed: used) when a direction key comes up with the
+-- stick under this
+local LET_GO_LEN = 0.5
 -- EXIT's picture: the game's "pass" cross
 local EXIT_ICON = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"
 W.EXIT_ICON = EXIT_ICON
@@ -713,7 +716,6 @@ local LET_GO = [[
         end
         owner:SetAttribute("ck-held-" .. button, 1)
         owner:SetAttribute("ck-seen-" .. button, 1)
-        owner:SetAttribute("ck-last", button)
     else
         owner:SetAttribute("ck-held-" .. button, 0)
     end
@@ -721,12 +723,13 @@ local LET_GO = [[
     local stick = state and state.sticks and state.sticks[stickAt]
     local len = stick and stick.len or 0
     local strongest = owner:GetAttribute("ck-aimlen") or 0
-    -- Let go: no direction held any more, or the last one pressed released
-    -- (the game sends only its release: seen in game (/ec wheel), up right
-    -- pressed UP then RIGHT, RIGHT came back, UP's release never came, nothing
-    -- was cast), or one released with the stick not out at the rim (else it
-    -- rolls round it to another section)
-    local letGo = not down and (not held or owner:GetAttribute("ck-last") == button or len < 0.9)
+    -- Let go: no direction held any more, or one released with the stick
+    -- back toward the middle (the game may send only one release: seen in
+    -- game (/ec wheel), up right pressed UP then RIGHT, RIGHT came back, UP's
+    -- release never came). Not a release with the stick still out: easing
+    -- it off the rim, or from a diagonal back to its side, fired before
+    -- (reported: too easily, with "the last one pressed" and "under 0.9")
+    local letGo = not down and (not held or len < ]] .. LET_GO_LEN .. [[)
     -- Two directions to try, each giving the nearest section: first the
     -- stick now, the flick's strongest reading winning (a later one about as
     -- strong too: rolling round the rim); then, let go with nothing aimed,
