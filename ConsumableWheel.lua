@@ -386,6 +386,14 @@ function W:Log(what)
         date("%H:%M:%S"), GetTime(), what, tostring(InCombatLockdown()), tostring(taken), stick and stick.len or 0,
         tostring(GetBindingAction("PAD1", true)), tostring(self.aimed), ok and tostring(keys) or "?")
     while #log > 16 do table.remove(log, 1) end
+    -- (debug, while testing: also kept in the saved variables, read after a
+    -- /reload; ControllerKeyboardDB.wheelLog, the last 300)
+    if CK.db then
+        CK.db.wheelLog = CK.db.wheelLog or {}
+        local saved = CK.db.wheelLog
+        saved[#saved + 1] = log[#log]
+        while #saved > 300 do table.remove(saved, 1) end
+    end
 end
 
 -- /ec wheel: what is in it, what is not and why
@@ -850,6 +858,12 @@ function W:Build()
         t:SetAttribute("type", "click")
         self.myToggles[n] = t
     end
+    -- (debug: each wheel key's presses and releases, for /ec wheel)
+    for _, t in ipairs({ toggle, usable, unpack(self.myToggles) }) do
+        t:HookScript("OnAttributeChanged", function(b, name, value)
+            if name == "ck-down" then W:Log(b:GetName() .. " " .. (value and "down" or "up")) end
+        end)
+    end
     -- The party spells' keys: made when a key gets one (PartyToggle)
     self.partyToggles = {}
     local use = keyButton("ControllerKeyboardWheelUse", wheel, USE, DONE)
@@ -931,6 +945,7 @@ function W:Build()
     -- Closed (its keys let go in its secure code, which our binding hooks
     -- don't see): the replaced buttons it held back are bound again
     wheel:HookScript("OnHide", function()
+        W:Log("closed")
         C_Timer.After(0, function()
             if not InCombatLockdown() and CK.Mapping then CK.Mapping:Repair() end
             -- A party spell's wheel closed: the frame back where the wheels
