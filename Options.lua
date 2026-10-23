@@ -881,7 +881,8 @@ local function usableRows(b)
     end
 end
 
--- How every wheel opens: pressed (open, A uses, press again closes) or held
+-- How every wheel opens: pressed (a flick of the right stick let go uses,
+-- the key again closes) or held (the stick lights, the key let go uses)
 local function wheelOpenRows(b)
     local s = settings().wheel
     b.header(L.SEC_WHEEL_OPEN)
@@ -891,23 +892,6 @@ local function wheelOpenRows(b)
         set = function(v)
             s.hold = v
             CK.ConsumableWheel:Fill()
-        end })
-    -- The stick that aims (asked): left or right
-    b.choice({ id = "w_stick", label = L.LBL_WHEEL_STICK, tip = L.TIP_WHEEL_STICK,
-        text = function() return s.aimStick == "right" and L.STICK_RIGHT or L.STICK_LEFT end,
-        step = function()
-            s.aimStick = s.aimStick == "right" and "left" or "right"
-            CK.ConsumableWheel:Fill()
-            CK.ConsumableWheel:SyncStickKeys()
-        end })
-    -- The right stick let go uses (asked; off by default: a press confirms)
-    b.check({ id = "w_letgo", label = L.LBL_WHEEL_LETGO, indent = true, disabled = s.aimStick ~= "right",
-        tip = L.TIP_WHEEL_LETGO,
-        get = function() return s.stickRelease == true end,
-        set = function(v)
-            s.stickRelease = v
-            CK.ConsumableWheel:Fill()
-            CK.ConsumableWheel:SyncStickKeys()
         end })
 end
 

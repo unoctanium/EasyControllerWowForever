@@ -90,13 +90,10 @@ local DEFAULTS = {
     -- Consumables wheel: its kinds, and the variants beside the best of each
     wheel = {
         enabled = true, variants = true, locked = true,
-        -- Every wheel: hold its key to show it, let go to use (off: press)
+        -- Every wheel, aimed with the right stick: hold its key to show it,
+        -- the stick lights, let go of the key to use (off: pressed, a flick
+        -- of the stick let go uses)
         hold = false,
-        -- The stick that aims them: "left" or "right" (a party spell's: the right)
-        aimStick = "left",
-        -- Aimed with the right stick: letting it go uses what it aims at
-        -- (asked; off: a press confirms, nothing used by accident)
-        stickRelease = false,
         -- The usable items' wheel: the items hidden from it ({ [item ID] =
         -- true }, false once shown again); the hearthstone by default
         usableHidden = { [6948] = true },
@@ -222,6 +219,22 @@ function CK.CleanEntries(s)
             if type(w.slots) == "table" then
                 for i = 1, 8 do
                     if type(w.slots[i]) == "string" then slots[i] = w.slots[i] end
+                end
+            end
+            -- The bottom slot is every wheel's EXIT: what was put
+            -- there goes to the first empty slot; a full wheel loses it (the
+            -- player told once, MyWheels.lua)
+            if slots[5] then
+                for _, i in ipairs({ 1, 2, 3, 4, 6, 7, 8 }) do
+                    if not slots[i] then
+                        slots[i], slots[5] = slots[5], nil
+                        break
+                    end
+                end
+                if slots[5] then
+                    CK.exitDropped = CK.exitDropped or {}
+                    table.insert(CK.exitDropped, { wheel = w.name, action = slots[5] })
+                    slots[5] = nil
                 end
             end
             w.slots = slots

@@ -41,13 +41,35 @@ local L = CK.L
 -- held, aimed, let go casts the spell on that member, the target kept (the
 -- slot's button has its unit); a short press leaves it open: aim, then A.
 -- Drawn by its own frame (`pview`): the big wheel's drawing stays as it is.
+--
+-- Made for the right hand alone (asked): the left thumb stays on the left
+-- stick, which goes on moving the character while a wheel is open (the
+-- wheel takes the right stick only, as the game's own radial menus do).
+-- Every wheel is aimed with the right stick and always has all its
+-- sections (8, a party spell's 6), the empty ones too; the bottom one is
+-- EXIT and holds nothing. Pressed (the default): a flick toward a section
+-- and its release uses what is there; EXIT or an empty section closes the
+-- wheel, its key pressed again too. Held to show (option): the stick only
+-- lights a section (kept when the stick goes back to the middle), the
+-- key's release uses it; EXIT, an empty section or nothing lit: closed.
 local W = {}
 CK.ConsumableWheel = W
 
 local SEGMENTS, PAGES = 8, 3
 W.MY_MAX = 8
-local MAX = SEGMENTS * PAGES
+-- The bottom section of every wheel: EXIT, never filled (a party spell's
+-- wheel: its 4th of 6). In the secure code: the section n / 2 + 1 of n,
+-- whose slot button never shows
+local EXIT = 5
+W.EXIT = EXIT
+-- The slots a filled page takes, clockwise from the top, EXIT left out
+local PAGE_SLOTS = { 1, 2, 3, 4, 6, 7, 8 }
+local PER_PAGE = #PAGE_SLOTS
+local MAX = PER_PAGE * PAGES
 local AIM = 0.5     -- the stick aims past half its course
+-- EXIT's picture: the game's "pass" cross
+local EXIT_ICON = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"
+W.EXIT_ICON = EXIT_ICON
 -- The wheel's art (Claude Design, design/radial/wheel/geometry.json): 512 x
 -- 512, its crown from 75 to 213 from the middle. Like the game's radial
 -- menu: the icons a little inside the crown's middle, each name beside its
@@ -69,25 +91,27 @@ local OVERLAY = {
 }
 -- The banner under the wheel, sized for its two lines
 local BANNER_W, BANNER_H = 360, 64
--- A party spell's wheel: its members' places (you, then party1 to party4),
--- their direction from the middle: you at the bottom, then clockwise every
--- fifth of a turn (member 1 on the left)
-local PARTY_UNITS = { "player", "party1", "party2", "party3", "party4" }
+-- A party spell's wheel: 6 sections of a sixth of a turn (asked), you at
+-- the top, EXIT at the bottom, members 1 and 2 clockwise on your right,
+-- 3 and 4 on your left (false: EXIT's place)
+local PARTY_UNITS = { "player", "party1", "party2", false, "party3", "party4" }
+local PARTY_SECTIONS, PARTY_EXIT = #PARTY_UNITS, 4
 local PARTY_RADIUS, PARTY_SLOT, PARTY_CENTER, PARTY_BASE = 62, 38, 44, 196
 -- Each member's health as a ring around their portrait (asked): its size,
 -- its arcs (one a 40th of the health), how far it reaches past the portrait
 local HP_RING, HP_ARCS = 50, 40
 local HP_RING_OUT = (HP_RING - PARTY_SLOT) / 2
 local PARTY_DIRS = {}
-for i = 1, #PARTY_UNITS do
-    local a = math.pi + (i - 1) * 2 * math.pi / #PARTY_UNITS
+for i = 1, PARTY_SECTIONS do
+    local a = (i - 1) * 2 * math.pi / PARTY_SECTIONS
     PARTY_DIRS[i] = { math.sin(a), math.cos(a) }
 end
 W.PARTY_DIRS = PARTY_DIRS
 local function isParty(wid) return type(wid) == "string" and wid:sub(1, 1) == "p" end
 W.isParty = isParty
 -- The right stick's direction keys (sent with the game's
--- GamePadStickAxisButtons setting): letting the stick go casts
+-- GamePadStickAxisButtons setting): what the secure code sees of the
+-- stick between two presses (a flick let go, the section lit)
 local PARTY_STICK_KEYS = "PADRSTICKUP,PADRSTICKDOWN,PADRSTICKLEFT,PADRSTICKRIGHT,"
 local STICK_DIR_KEYS = {}
 for _, side in ipairs({ "L", "R" }) do
@@ -289,43 +313,27 @@ function W:TakeSticks(frame, on)
     if frame.EnableGamePadStick then pcall(frame.EnableGamePadStick, frame, on) end
 end
 
--- The stick that aims the wheels (Wheels > Opening, asked): the left one by
--- default, the right one if chosen; a party spell's wheel always the right
--- one ("ck-pstick", its own)
-function W.AimRight()
-    return CK.db ~= nil and settings().aimStick == "right"
-end
-
--- Letting the right stick go uses what it aims at (asked; Wheels >
--- Opening, off by default: a press confirming, nothing is used by accident),
--- as a party spell's wheel does: the consumables, usable items and the
--- player's own wheels, aimed with the right stick
-function W.LetGo()
-    return CK.db ~= nil and settings().stickRelease == true and W.AimRight()
-end
-
--- Its name in the texts ("left stick"...)
-function W.StickWords()
-    return W.AimRight() and L.WHEEL_STICK_RIGHT or L.WHEEL_STICK_LEFT
-end
-
--- The stick that aims the open wheel: the one chosen, the right one for a
--- party spell's
-local function aimStick(wheel)
-    if not wheel then return 1 end
-    return wheel:GetAttribute(isParty(wheel:GetAttribute("wheel")) and "ck-pstick" or "ck-stick") or 1
-end
-
--- A frame that takes the sticks keeps only the one that aims the open
--- wheel, as the game's own radial menus do (Blizzard_RadialWheel.lua): its
--- stick script answering true lets that stick through to the game. Aimed
--- with the right stick, the left one goes on moving the character; aimed
--- with the left one, the right one goes on turning the camera
+-- A frame that takes the sticks keeps the right one only, as the game's own
+-- radial menus do (Blizzard_RadialWheel.lua): its stick script answering
+-- true lets that stick through to the game, so the left one goes on moving
+-- the character while a wheel is open
 local function aimOnly(_, stick)
-    local wheel = W.frame
-    local right = W.AimRight() or (wheel and isParty(wheel:GetAttribute("wheel")))
-    if right then return stick ~= "Camera" and stick ~= "Right" end
-    return stick ~= "Movement" and stick ~= "Left"
+    return stick ~= "Camera" and stick ~= "Right"
+end
+
+-- Held to show (Wheels > Opening): the stick lights, the key's release uses
+function W.Held()
+    return CK.db ~= nil and settings().hold == true
+end
+
+-- Its name in the texts
+function W.StickWords()
+    return L.WHEEL_STICK_RIGHT
+end
+
+-- The stick that aims the open wheel: the right one (its index, set by Fill)
+local function aimStick(wheel)
+    return wheel and wheel:GetAttribute("ck-stick") or 2
 end
 
 -- How far the stick that aims the wheel is pushed now (0 to 1)
@@ -460,21 +468,25 @@ end
 
 ---------------------------------------------------------------------------
 -- The secure part. The wheel frame owns the keys it takes while open (A,
--- B, LB / RB, with every modifier a trigger may add); its snippets read the
--- left stick from the game's gamepad state when A is pressed. Each slot
--- direction is a unit vector ("ck-x3", "ck-y3"): the aimed slot is the
--- closest one. Nothing is remembered: the stick back in the middle aims at
--- nothing.
+-- B, LB / RB and the right stick's direction keys, with every modifier a
+-- trigger may add), but those of the key that opened it ("ck-keys" of its
+-- button): pressed again it closes the wheel, its release is seen. Its
+-- snippets read the right stick from the game's gamepad state when a key
+-- comes. Each section's direction is a unit vector ("ck-x8-3", "ck-y8-3"):
+-- the aimed section is the closest one, any of the page's ("ck-...-n"
+-- sections: 8, a party spell's 6). A section whose slot button is hidden
+-- (EXIT, an empty one, a member not there) closes the wheel when used.
+-- What the stick last pointed at is kept ("ck-aim"): held to show, the
+-- key's release uses it.
 ---------------------------------------------------------------------------
 local PREFIXES = ",SHIFT-,CTRL-,ALT-,CTRL-SHIFT-,ALT-SHIFT-,ALT-CTRL-,ALT-CTRL-SHIFT-,"
 
 -- A page of the open wheel into the 8 slots' buttons, from the wheel's
 -- attributes: "ck-c-2-5" is the consumables wheel ("c"; the player's: "1"
 -- to "8"), page 2, slot 5; "-t" its kind (item, spell, macro), "-u" its unit
--- "-n": how many the page holds; the slots' buttons go around the wheel in
--- as many sections ("ck-x5-2": slot 2 of 5's direction). A party spell's
--- wheel: each member's own place ("ck-pdx-2"), nearer the middle; a member
--- who isn't there gets no button
+-- "-n": its sections (8, a party spell's 6); the slots' buttons go around
+-- the wheel ("ck-x8-2": slot 2 of 8's direction), a party spell's nearer
+-- the middle; an empty slot, EXIT or a member who isn't there gets no button
 local APPLY_PAGE = [[
     local wid = owner:GetAttribute("wheel") or "c"
     local party = strsub(wid, 1, 1) == "p"
@@ -491,10 +503,9 @@ local APPLY_PAGE = [[
         b:SetAttribute("macro", kind == "macro" and value or nil)
         b:SetAttribute("unit", unit)
         if kind and i <= n and (not party or UnitExists(unit)) then
-            local x = owner:GetAttribute(party and ("ck-pdx-" .. i) or ("ck-x" .. n .. "-" .. i))
-            local y = owner:GetAttribute(party and ("ck-pdy-" .. i) or ("ck-y" .. n .. "-" .. i))
             b:ClearAllPoints()
-            b:SetPoint("CENTER", owner, "CENTER", radius * x, radius * y)
+            b:SetPoint("CENTER", owner, "CENTER", radius * owner:GetAttribute("ck-x" .. n .. "-" .. i),
+                radius * owner:GetAttribute("ck-y" .. n .. "-" .. i))
             b:Show()
         else
             b:Hide()
@@ -502,84 +513,87 @@ local APPLY_PAGE = [[
     end
 ]]
 
--- LB / RB: the previous or next page
+-- LB / RB: the previous or next page (what was lit goes)
 local PAGE = [[
     if not down then return false end
     local pages = owner:GetAttribute("ck-" .. (owner:GetAttribute("wheel") or "c") .. "-pages") or 1
     if pages < 2 then return false end
     owner:SetAttribute("page", ((owner:GetAttribute("page") or 1) - 1 + (button == "LB" and -1 or 1)) % pages + 1)
+    owner:SetAttribute("ck-aim", 0)
     ]] .. APPLY_PAGE .. [[
     return false
 ]]
 
--- `slot`: the slot the left stick points at now (past half its course), else
--- 0. A party spell's wheel: the right stick, the nearest member there
+-- `slot`: the section the right stick points at now (past half its
+-- course), any of the page's, else 0
 local AIMED = [[
     local slot = 0
     local state = GetGamePadState()
     local aimWid = owner:GetAttribute("wheel") or "c"
-    local aimParty = strsub(aimWid, 1, 1) == "p"
-    local stick = state and state.sticks
-        and state.sticks[owner:GetAttribute(aimParty and "ck-pstick" or "ck-stick") or 1]
+    local stick = state and state.sticks and state.sticks[owner:GetAttribute("ck-stick") or 2]
     local n = owner:GetAttribute("ck-" .. aimWid .. "-" .. (owner:GetAttribute("page") or 1) .. "-n") or 0
     if n > 0 and stick and stick.len and stick.len > ]] .. AIM .. [[ then
         local bestDot = -2
         for i = 1, n do
-            if not aimParty then
-                local dot = stick.x * owner:GetAttribute("ck-x" .. n .. "-" .. i) + stick.y * owner:GetAttribute("ck-y" .. n .. "-" .. i)
-                if dot > bestDot then slot, bestDot = i, dot end
-            elseif owner:GetFrameRef("slot" .. i):IsShown() then
-                local dot = stick.x * owner:GetAttribute("ck-pdx-" .. i) + stick.y * owner:GetAttribute("ck-pdy-" .. i)
-                if dot > bestDot then slot, bestDot = i, dot end
-            end
+            local dot = stick.x * owner:GetAttribute("ck-x" .. n .. "-" .. i) + stick.y * owner:GetAttribute("ck-y" .. n .. "-" .. i)
+            if dot > bestDot then slot, bestDot = i, dot end
         end
     end
-    -- An empty slot (after a page's last item, or left empty in a wheel of
-    -- the player's): nothing
-    if slot > 0 and not owner:GetFrameRef("slot" .. slot):IsShown() then slot = 0 end
 ]]
 
--- Opening: shown, the sticks taken from the camera and the character (like
--- the game's own wheels), the keys it uses taken while it is open
-local SHOW = [[
-    owner:SetAttribute("page", 1)
-    ]] .. APPLY_PAGE .. [[
-    owner:Show()
-    for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
-        owner:SetBindingClick(true, prefix .. "PAD1", "ControllerKeyboardWheelUse")
-        owner:SetBindingClick(true, prefix .. "PAD2", "ControllerKeyboardWheelClose")
-        owner:SetBindingClick(true, prefix .. "PADLSHOULDER", "ControllerKeyboardWheelPage", "LB")
-        owner:SetBindingClick(true, prefix .. "PADRSHOULDER", "ControllerKeyboardWheelPage", "RB")
-    end
-    owner:SetBindingClick(true, "ESCAPE", "ControllerKeyboardWheelClose")
-    -- A party spell's wheel, or another one let go to use (option): the
-    -- right stick's direction keys, to see it let go
-    if strsub(owner:GetAttribute("wheel") or "c", 1, 1) == "p" or owner:GetAttribute("ck-letgo") then
-        owner:SetAttribute("ck-aim", 0)
-        owner:SetAttribute("ck-aimlen", 0)
-        for key in gmatch(owner:GetAttribute("ck-pstickkeys"), "([^,]+),") do
-            owner:SetAttribute("ck-held-" .. key, 0)
-            owner:SetAttribute("ck-seen-" .. key, nil)
-            for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
-                owner:SetBindingClick(true, prefix .. key, "ControllerKeyboardWheelLetGo", key)
-            end
-        end
-    end
+-- `filled`: the section `slot` holds something to use (its button shown);
+-- EXIT, an empty section, a member not there: not
+local FILLED = [[
+    local filled = slot > 0 and owner:GetFrameRef("slot" .. slot):IsShown()
 ]]
 
 local HIDE = [[
     owner:Hide()
     owner:ClearBindings()
+    owner:SetAttribute("ck-aim", 0)
+]]
+
+-- Opening: shown, the keys it uses taken while it is open (but the key of
+-- the button that opened it, `self`: pressed again, it closes the wheel),
+-- the right stick's direction keys to follow the stick
+local SHOW = [[
+    owner:SetAttribute("page", 1)
+    owner:SetAttribute("ck-aim", 0)
+    owner:SetAttribute("ck-aimlen", 0)
+    ]] .. APPLY_PAGE .. [[
+    owner:Show()
+    local skip = self:GetAttribute("ck-keys") or ","
+    for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
+        if not strfind(skip, ",PAD1,", 1, true) then
+            owner:SetBindingClick(true, prefix .. "PAD1", "ControllerKeyboardWheelUse")
+        end
+        if not strfind(skip, ",PAD2,", 1, true) then
+            owner:SetBindingClick(true, prefix .. "PAD2", "ControllerKeyboardWheelClose")
+        end
+        if not strfind(skip, ",PADLSHOULDER,", 1, true) then
+            owner:SetBindingClick(true, prefix .. "PADLSHOULDER", "ControllerKeyboardWheelPage", "LB")
+        end
+        if not strfind(skip, ",PADRSHOULDER,", 1, true) then
+            owner:SetBindingClick(true, prefix .. "PADRSHOULDER", "ControllerKeyboardWheelPage", "RB")
+        end
+    end
+    owner:SetBindingClick(true, "ESCAPE", "ControllerKeyboardWheelClose")
+    for key in gmatch(owner:GetAttribute("ck-pstickkeys"), "([^,]+),") do
+        owner:SetAttribute("ck-held-" .. key, 0)
+        owner:SetAttribute("ck-seen-" .. key, nil)
+        for prefix in gmatch(owner:GetAttribute("ck-prefixes"), "([^,]*),") do
+            owner:SetBindingClick(true, prefix .. key, "ControllerKeyboardWheelLetGo", key)
+        end
+    end
 ]]
 
 -- A wheel's key (its "ck-wheel"): opens or closes it, on its press (a key
 -- bound to it sends a press and a release; a router sends one click on the
 -- press, no "down", and its release as a "ckup" click). Another wheel open:
--- this one takes its place. The release: with the hold option (Wheels >
--- Opening), what the stick aims at is used (its slot's button clicked, which
--- closes the wheel), the stick in the middle closes it; else let pass.
--- A party spell's wheel always: the stick in the middle leaves it open (a
--- short press: aim, then A).
+-- this one takes its place. The release: held to show (Wheels > Opening),
+-- what is aimed at is used (its slot's button clicked, which closes the
+-- wheel): the stick if it is pushed out now, else the section it lit;
+-- EXIT, an empty section or nothing lit closes it. Else let pass.
 --
 -- A party spell's wheel opens on its button (its key's "ck-ax", "ck-ay": the
 -- button's centre on the screen, else where the wheels go), the wheel frame
@@ -591,15 +605,14 @@ local TOGGLE = [[
     local release = (button and strsub(button, 1, 4) == "ckup") or (not down and self:GetAttribute("ck-down"))
     self:SetAttribute("ck-down", down and true or false)
     if release then
-        if owner:GetAttribute("wheel") == wid then owner:SetAttribute("ck-open-held", nil) end
-        if not ((party or owner:GetAttribute("ck-hold")) and owner:IsShown() and owner:GetAttribute("wheel") == wid) then
+        if not (owner:GetAttribute("ck-hold") and owner:IsShown() and owner:GetAttribute("wheel") == wid) then
             return false
         end
         ]] .. AIMED .. [[
-        if slot < 1 then
-            if not party then
-                ]] .. HIDE .. [[
-            end
+        if slot < 1 then slot = owner:GetAttribute("ck-aim") or 0 end
+        ]] .. FILLED .. [[
+        if not filled then
+            ]] .. HIDE .. [[
             return false
         end
         -- Clicked on this release
@@ -630,50 +643,50 @@ local TOGGLE = [[
             owner:SetAttribute("ck-moved", nil)
         end
         owner:SetAttribute("wheel", wid)
-        -- Its key held (a party spell's wheel): if it is A, B, LB or RB, the
-        -- wheel's own keys while open, its release goes to them (OPENER_UP)
-        owner:SetAttribute("ck-open-held", party and true or nil)
-        owner:SetAttribute("ck-used-down", nil)
         ]] .. SHOW .. [[
     end
     return false
 ]]
 
--- A: the item the left stick points at; the stick in the middle: nothing
+-- A: what the right stick points at (held to show: else the section lit);
+-- EXIT or an empty section closes the wheel, nothing aimed: nothing
 local USE = [[
     if not down then return false end
     ]] .. AIMED .. [[
+    if slot < 1 then slot = owner:GetAttribute("ck-aim") or 0 end
     if slot < 1 then return false end
+    ]] .. FILLED .. [[
+    if not filled then
+        ]] .. HIDE .. [[
+        return false
+    end
     return "s" .. slot, true
 ]]
 
--- A party spell's wheel: the right stick's direction keys (their name comes
--- as the click's button), like the game's flyouts: a flick toward a member
--- and its release (no direction held any more) casts on them. Secure code
+-- The right stick's direction keys (their name comes as the click's
+-- button), like the game's flyouts: a flick toward a section and its
+-- release (no direction held any more) uses what is there (pressed), or
+-- only lights it (held to show: the key's release uses it). Secure code
 -- only sees the stick when the game sends one of those keys, at the edge of
 -- their threshold, near the middle: read there, a flick up right gave UP
--- alone, as near to the member up left as to the one up right, and the
+-- alone, as near to the section up left as to the one up right, and the
 -- spell went to the wrong one or nowhere (reported: never on member 3 but
 -- with A, which reads the stick held out). So each flick keeps its
 -- strongest reading of the stick (any reading out of the middle at all
 -- gives a direction), and, if the stick never read out, the directions it
--- went through, but only if they point at one member clearly.
---
--- The other wheels let go to use (option, "ck-letgo"): the same, aimed at
--- the page's slots (their sections) with the stick that aims them.
+-- went through, but only if they point at one section clearly.
 local LET_GO = [[
     local wid = owner:GetAttribute("wheel") or "c"
-    local party = strsub(wid, 1, 1) == "p"
-    local stickAt = owner:GetAttribute(party and "ck-pstick" or "ck-stick") or 2
+    local stickAt = owner:GetAttribute("ck-stick") or 2
     -- For /ec wheel: each key as it comes, and the stick read then
     local seen = GetGamePadState()
     local seenStick = seen and seen.sticks and seen.sticks[stickAt]
     owner:SetAttribute("ck-event", format("%s %s %.2f", tostring(button), down and "down" or "up", seenStick and seenStick.len or 0))
-    if not (owner:IsShown() and (party or owner:GetAttribute("ck-letgo")) and owner:GetAttribute("ck-held-" .. button)) then
+    if not (owner:IsShown() and owner:GetAttribute("ck-held-" .. button)) then
         return false
     end
-    -- The slots aimed at: the members (5 places), or the page's sections
-    local n = party and 5 or (owner:GetAttribute("ck-" .. wid .. "-" .. (owner:GetAttribute("page") or 1) .. "-n") or 0)
+    -- Every section of the page, the empty ones and EXIT too
+    local n = owner:GetAttribute("ck-" .. wid .. "-" .. (owner:GetAttribute("page") or 1) .. "-n") or 0
     local keys = owner:GetAttribute("ck-pstickkeys")
     local held = false
     for key in gmatch(keys, "([^,]+),") do
@@ -700,12 +713,12 @@ local LET_GO = [[
     -- (the game sends only its release: seen in game (/ec wheel), up right
     -- pressed UP then RIGHT, RIGHT came back, UP's release never came, nothing
     -- was cast), or one released with the stick not out at the rim (else it
-    -- rolls round it to another member)
+    -- rolls round it to another section)
     local letGo = not down and (not held or owner:GetAttribute("ck-last") == button or len < 0.9)
-    -- Two directions to try, each giving the nearest member there: first the
+    -- Two directions to try, each giving the nearest section: first the
     -- stick now, the flick's strongest reading winning (a later one about as
     -- strong too: rolling round the rim); then, let go with nothing aimed,
-    -- the directions the flick went through, when one member is clearly the
+    -- the directions the flick went through, when one section is clearly the
     -- nearest. (Written out twice over: the game refuses its keyword here.)
     for pass = 1, 2 do
         local x, y, clear
@@ -724,15 +737,11 @@ local LET_GO = [[
         if x then
             local best, bestDot, second = nil, -100, -100
             for i = 1, n do
-                if owner:GetFrameRef("slot" .. i):IsShown() then
-                    local dx = owner:GetAttribute(party and ("ck-pdx-" .. i) or ("ck-x" .. n .. "-" .. i))
-                    local dy = owner:GetAttribute(party and ("ck-pdy-" .. i) or ("ck-y" .. n .. "-" .. i))
-                    local dot = x * dx + y * dy
-                    if dot > bestDot then
-                        best, second, bestDot = i, bestDot, dot
-                    elseif dot > second then
-                        second = dot
-                    end
+                local dot = x * owner:GetAttribute("ck-x" .. n .. "-" .. i) + y * owner:GetAttribute("ck-y" .. n .. "-" .. i)
+                if dot > bestDot then
+                    best, second, bestDot = i, bestDot, dot
+                elseif dot > second then
+                    second = dot
                 end
             end
             if best and not (clear and bestDot - second < 0.1) then
@@ -744,8 +753,15 @@ local LET_GO = [[
     if not letGo then return false end
     -- Let go: every direction counted released
     for key in gmatch(keys, "([^,]+),") do owner:SetAttribute("ck-held-" .. key, 0) end
+    -- Held to show: lit only, the key's release uses it
+    if owner:GetAttribute("ck-hold") then return false end
     local slot = owner:GetAttribute("ck-aim") or 0
-    if slot < 1 or not owner:GetFrameRef("slot" .. slot):IsShown() then return false end
+    if slot < 1 then return false end
+    ]] .. FILLED .. [[
+    if not filled then
+        ]] .. HIDE .. [[
+        return false
+    end
     return "s" .. slot, true
 ]]
 
@@ -753,25 +769,6 @@ local LET_GO = [[
 local DONE = HIDE
 
 local CLOSE = HIDE .. " return false"
-
--- A party spell's wheel opened by A, B, LB or RB: those are the wheel's keys
--- while it is open, so the release of the key that opened it comes to them
--- (reported: a party spell on A, held, aimed, let go: nothing). Taken as
--- that key's release while none of them was pressed since the opening.
-local OPENER_UP = [[
-    if not (owner:IsShown() and owner:GetAttribute("ck-open-held") and not owner:GetAttribute("ck-used-down")) then
-        return false
-    end
-    owner:SetAttribute("ck-open-held", nil)
-    ]] .. AIMED .. [[
-    if slot < 1 then return false end
-    self:SetAttribute("useOnKeyDown", false)
-    return "s" .. slot, true
-]]
-local function keyOf(snippet)
-    return "if not down then " .. OPENER_UP .. " end\n"
-        .. "self:SetAttribute(\"useOnKeyDown\", true)\nowner:SetAttribute(\"ck-used-down\", true)\n" .. snippet
-end
 
 -- A button for the wheel's keys: a secure action button, its OnClick
 -- wrapped by the wheel
@@ -821,12 +818,8 @@ function W:Build()
         end
     end
     wheel:SetAttribute("ck-radius", ICON_RADIUS)
-    -- A party spell's wheel: its members' places, its size
+    -- A party spell's wheel: its members nearer the middle
     wheel:SetAttribute("ck-pradius", PARTY_RADIUS)
-    for i, d in ipairs(PARTY_DIRS) do
-        wheel:SetAttribute("ck-pdx-" .. i, d[1])
-        wheel:SetAttribute("ck-pdy-" .. i, d[2])
-    end
     wheel:SetAttribute("ck-pstickkeys", PARTY_STICK_KEYS)
     -- Each of them: its direction
     for key, d in pairs({ PADRSTICKUP = { 0, 1 }, PADRSTICKDOWN = { 0, -1 }, PADRSTICKLEFT = { -1, 0 }, PADRSTICKRIGHT = { 1, 0 } }) do
@@ -859,18 +852,16 @@ function W:Build()
     end
     -- The party spells' keys: made when a key gets one (PartyToggle)
     self.partyToggles = {}
-    local use = keyButton("ControllerKeyboardWheelUse", wheel, keyOf(USE), DONE, "AnyDown", "AnyUp")
+    local use = keyButton("ControllerKeyboardWheelUse", wheel, USE, DONE)
     use:SetAttribute("type", "click")
     use:HookScript("OnClick", function(_, _, down) if down ~= false then W:Log("A") end end)
     self.use = use
-    local close = keyButton("ControllerKeyboardWheelClose", wheel, keyOf(CLOSE), DONE, "AnyDown", "AnyUp")
+    local close = keyButton("ControllerKeyboardWheelClose", wheel, CLOSE, DONE)
     close:SetAttribute("type", "click")
-    -- The stick direction keys: their presses and releases move the choice
-
-    local page = keyButton("ControllerKeyboardWheelPage", wheel, keyOf(PAGE), DONE, "AnyDown", "AnyUp")
+    local page = keyButton("ControllerKeyboardWheelPage", wheel, PAGE, DONE)
     page:SetAttribute("type", "click")
-    -- A party spell's wheel: the right stick let go (its direction keys'
-    -- presses and releases; the cast on a release)
+    -- The right stick's direction keys: their presses and releases light a
+    -- section, a flick let go uses it (pressed)
     local letGo = keyButton("ControllerKeyboardWheelLetGo", wheel, LET_GO, DONE, "AnyDown", "AnyUp")
     letGo:SetAttribute("type", "click")
     letGo:SetAttribute("useOnKeyDown", false)
@@ -893,12 +884,12 @@ function W:Build()
     -- wheel), like the game's own wheels, so the character and the camera
     -- don't move (and food can be eaten: not while moving). Turned on each
     -- time it shows; its stick script is needed for the game to give it them.
-    -- Only the stick that aims: the other one stays the game's
+    -- The right stick only: the left one goes on moving the character
     view:SetScript("OnGamePadStick", function(self, stick)
         W:Track()
         return aimOnly(self, stick)
     end)
-    -- The wheel in as many sections as the page holds (set when drawn)
+    -- The wheel, always in its 8 sections
     local bg = view:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("CENTER")
     bg:SetSize(WHEEL_SIZE, WHEEL_SIZE)
@@ -1011,6 +1002,7 @@ function W:Build()
         close:SetAttribute("*clickbutton-s" .. i, b)
         page:SetAttribute("*clickbutton-s" .. i, b)
         self.toggle:SetAttribute("*clickbutton-s" .. i, b)
+        self.usableToggle:SetAttribute("*clickbutton-s" .. i, b)
         for _, t in ipairs(self.myToggles) do t:SetAttribute("*clickbutton-s" .. i, b) end
 
         self.buttons[i] = b
@@ -1053,7 +1045,8 @@ function W:BuildParty(wheel)
     pv.center:SetPoint("CENTER")
     pv.members = {}
     for i, d in ipairs(PARTY_DIRS) do
-        local seg = {}
+        -- (EXIT's place: drawn as EXIT, see paintMember)
+        local seg = { exit = i == PARTY_EXIT }
         seg.slot = CK.Paddles:CreateSlot(pv, PARTY_SLOT)
         seg.slot:SetPoint("CENTER", pv, "CENTER", PARTY_RADIUS * d[1], PARTY_RADIUS * d[2])
         seg.slot:Hide()
@@ -1354,12 +1347,13 @@ function W:BuildSeated()
     self.seated, self.seatedEvents = f, events
 end
 
--- A wheel's pages ({ page = { [slot] = entry } }) into its attributes
-local function store(wheel, wid, pages, unitOf)
+-- A wheel's pages ({ page = { [slot] = entry } }, EXIT's slot empty) into
+-- its attributes; every page has all its sections (8, a party spell's 6)
+local function store(wheel, wid, pages, unitOf, sections)
     local total = 0
     for page = 1, PAGES do
         local list = pages[page] or {}
-        wheel:SetAttribute("ck-" .. wid .. "-" .. page .. "-n", #list)
+        wheel:SetAttribute("ck-" .. wid .. "-" .. page .. "-n", sections or SEGMENTS)
         for i = 1, SEGMENTS do
             local e = list[i]
             local key = "ck-" .. wid .. "-" .. page .. "-" .. i
@@ -1384,15 +1378,13 @@ function W:ApplyPage()
     local party = isParty(wid)
     local key = "ck-" .. wid .. "-" .. (wheel:GetAttribute("page") or 1) .. "-"
     local n = wheel:GetAttribute(key .. "n") or 0
+    local radius = party and PARTY_RADIUS or ICON_RADIUS
     for i, b in ipairs(self.buttons) do
         local unit = wheel:GetAttribute(key .. i .. "-u")
-        if party and PARTY_DIRS[i] then
-            b:ClearAllPoints()
-            b:SetPoint("CENTER", wheel, "CENTER", PARTY_RADIUS * PARTY_DIRS[i][1], PARTY_RADIUS * PARTY_DIRS[i][2])
-        elseif i <= n then
+        if i <= n then
             local x, y = slotDir(i, n)
             b:ClearAllPoints()
-            b:SetPoint("CENTER", wheel, "CENTER", ICON_RADIUS * x, ICON_RADIUS * y)
+            b:SetPoint("CENTER", wheel, "CENTER", radius * x, radius * y)
         end
         local kind, value = wheel:GetAttribute(key .. i .. "-t"), wheel:GetAttribute(key .. i)
         b:SetAttribute("type", kind)
@@ -1404,16 +1396,19 @@ function W:ApplyPage()
     end
 end
 
--- A party spell's wheel: one page, you then the party's members
+-- A party spell's wheel: one page, you then the party's members (EXIT's
+-- place empty)
 local function partyPages(id)
     local list = {}
-    for i, unit in ipairs(PARTY_UNITS) do list[i] = { kind = "spell", id = id, unit = unit, party = true } end
+    for i, unit in ipairs(PARTY_UNITS) do
+        if unit then list[i] = { kind = "spell", id = id, unit = unit, party = true } end
+    end
     return { [1] = list }
 end
 
 function W:StoreParty(id)
     local pages = partyPages(id)
-    store(self.frame, "p" .. id, pages, function(e) return e.unit end)
+    store(self.frame, "p" .. id, pages, function(e) return e.unit end, PARTY_SECTIONS)
     self.lists = self.lists or {}
     self.lists["p" .. id] = pages
 end
@@ -1485,7 +1480,6 @@ function W:PartyToggle(id, comboId)
         end)
         self.partyToggles[key] = t
         self:StoreParty(id)
-        self.frame:SetAttribute("ck-pstick", stickIndex("Camera", 2))
     end
     self:PlaceParty(t)
     return t
@@ -1500,40 +1494,34 @@ function W:Fill()
     self.pending = nil
     self:Build()
     local wheel = self.frame
-    -- Hold its key to show it, let go to use what the stick aims at (option)
-    wheel:SetAttribute("ck-hold", settings().hold and true or nil)
-    -- Let the right stick go to use (option)
-    wheel:SetAttribute("ck-letgo", W.LetGo() and true or nil)
+    -- Hold its key to show it, the stick lights, let go of the key to use
+    -- (option)
+    wheel:SetAttribute("ck-hold", W.Held() or nil)
     self.lists = {}
-    -- The consumables: by kind, 8 a page
+    -- The consumables: by kind, 7 a page (around EXIT)
     local items = settings().enabled and self:Scan() or {}
     local pages = {}
     for n, item in ipairs(items) do
-        local page = math.floor((n - 1) / SEGMENTS) + 1
+        local page = math.floor((n - 1) / PER_PAGE) + 1
         pages[page] = pages[page] or {}
-        pages[page][(n - 1) % SEGMENTS + 1] = { kind = "item", id = item.id, cat = item.cat }
+        pages[page][PAGE_SLOTS[(n - 1) % PER_PAGE + 1]] = { kind = "item", id = item.id, cat = item.cat }
     end
     -- Bandages on yourself
     store(wheel, "c", pages, function(e) return e.cat == "bandage" and "player" or nil end)
     self.lists.c = pages
-    -- The usable items: 8 a page, quest items first
+    -- The usable items: 7 a page, quest items first
     local upages = {}
     for n, e in ipairs(self:ScanUsable()) do
-        local page = math.floor((n - 1) / SEGMENTS) + 1
+        local page = math.floor((n - 1) / PER_PAGE) + 1
         upages[page] = upages[page] or {}
-        upages[page][(n - 1) % SEGMENTS + 1] = e
+        upages[page][PAGE_SLOTS[(n - 1) % PER_PAGE + 1]] = e
     end
     store(wheel, "u", upages)
     self.lists.u = upages
-    -- The player's own: one page, each slot where it was put
+    -- The player's own: one page, each slot where it was put (the empty
+    -- ones stay, in their place)
     for n = 1, W.MY_MAX do
-        -- Its filled slots in their order, one after the other: the wheel has
-        -- as many sections
-        local entries, list = CK.MyWheels and CK.MyWheels:Entries(n) or {}, {}
-        for slot = 1, SEGMENTS do
-            if entries[slot] then list[#list + 1] = entries[slot] end
-        end
-        local own = { [1] = list }
+        local own = { [1] = CK.MyWheels and CK.MyWheels:Entries(n) or {} }
         for _, e in pairs(own[1]) do
             if e.kind == "item" and not e.cat then
                 local ok, cat = pcall(W.Category, e.id)
@@ -1547,8 +1535,7 @@ function W:Fill()
     -- where each key's button is
     for _, t in pairs(self.partyToggles) do self:StoreParty(t.ckSpell) end
     self:PlacePartyKeys()
-    wheel:SetAttribute("ck-stick", W.AimRight() and stickIndex("Camera", 2) or stickIndex("Movement", 1))
-    wheel:SetAttribute("ck-pstick", stickIndex("Camera", 2))
+    wheel:SetAttribute("ck-stick", stickIndex("Camera", 2))
     -- The open wheel emptied: closed
     local open = wheel:GetAttribute("wheel") or "c"
     if wheel:IsShown() and (wheel:GetAttribute("ck-" .. open .. "-total") or 0) == 0 then
@@ -1616,6 +1603,28 @@ local function entryUnusable(e, combat)
     return false
 end
 
+-- EXIT's section: its cross and name, always there
+local function paintExit(seg)
+    CK.Paddles.SetIcon(seg.slot.icon, { texture = EXIT_ICON })
+    seg.slot.icon:SetDesaturated(false)
+    seg.slot.icon:SetVertexColor(1, 1, 1)
+    seg.slot.count:SetText("")
+    seg.slot.cooldown:Clear()
+    seg.label:SetText(L.WHEEL_EXIT)
+    local color = HIGHLIGHT_FONT_COLOR or NORMAL_FONT_COLOR
+    if color then seg.label:SetTextColor(color:GetRGB()) end
+end
+
+-- The help under a wheel: aim with the right stick; pressed, a flick let go
+-- uses (`pressed`), held, the key let go uses (`held`); B closes
+local function helpText(pressed, held)
+    local h = function(key) return CK:GlyphMarkup(key, 14) end
+    if W.Held() then
+        return format("%s %s   %s   %s %s", h("RS"), L.WHEEL_AIM, held, h("B"), L.WHEEL_CLOSE)
+    end
+    return format("%s %s   %s %s", h("RS"), pressed, h("B"), L.WHEEL_CLOSE)
+end
+
 ---------------------------------------------------------------------------
 -- Drawing: the page's items (icons, names, counts, cooldowns, the veil on
 -- what can't be used now), the pages' dots, the highlight on the aimed
@@ -1631,14 +1640,19 @@ function W:Paint()
     if self.pview then self.pview:Hide() end
     self.view:SetAlpha(1)
     local list = self:PageItems()
-    local n = math.max(1, math.min(SEGMENTS, #list))
+    local n = SEGMENTS
     self.view.bg:SetTexture(TEX .. format("ck_wheel_bg_%d", n))
     self.paintedCount = n
     for i, seg in ipairs(self.segments) do
         local item = list[i]
-        seg.slot:SetShown(item ~= nil)
-        seg.label:SetShown(item ~= nil)
-        if item then
+        local exit = i == EXIT
+        seg.slot:SetShown(item ~= nil or exit)
+        seg.label:SetShown(item ~= nil or exit)
+        if exit then
+            W:PlaceSection(seg, i, n)
+            paintExit(seg)
+            seg.disabled:Hide()
+        elseif item then
             W:PlaceSection(seg, i, n)
             CK.Paddles.SetIcon(seg.slot.icon, W.EntryIcon(item))
             seg.slot.count:SetText(item.kind == "item" and (C_Item.GetItemCount and C_Item.GetItemCount(item.id) or 0) or "")
@@ -1673,13 +1687,7 @@ function W:Paint()
     else
         self.view.pages:SetText("")
     end
-    local h = function(key) return CK:GlyphMarkup(key, 14) end
-    if W.LetGo() then
-        self.view.help:SetText(format("%s %s   %s %s", h("RS"), L.WHEEL_LETGO, h("B"), L.WHEEL_CLOSE))
-    else
-        self.view.help:SetText(format("%s %s   %s %s   %s %s", h(W.AimRight() and "RS" or "LS"), L.WHEEL_AIM, h("A"),
-            L.WHEEL_USE, h("B"), L.WHEEL_CLOSE))
-    end
+    self.view.help:SetText(helpText(L.WHEEL_LETGO, L.WHEEL_RELEASE_USE))
     -- Not "nothing aimed" (nil): the banner is written, even the first time
     self.aimed = false
     self:Track()
@@ -1719,20 +1727,25 @@ function W:PlaceSection(seg, i, n)
     self:PlaceOverlay(seg.disabled, "off", i, n)
 end
 
-function W:Aimed()
-    local wheel = self.frame
-    local list = self:PageItems()
-    local n = math.min(SEGMENTS, #list)
+-- The section to light, of `n`: the one the right stick points at (past
+-- half its course), any of them, EXIT and the empty ones too; else, held
+-- to show, the one the secure code keeps for the key's release ("ck-aim"),
+-- so what is lit is what will be used
+function W:AimedSection(n)
     local state = C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetDeviceMappedState()
-    local stick = state and state.sticks and state.sticks[wheel:GetAttribute("ck-stick") or 1]
-    if n > 0 and stick and stick.len and stick.len > AIM then
+    local stick = state and state.sticks and state.sticks[aimStick(self.frame)]
+    if stick and stick.len and stick.len > AIM then
         local best, bestDot = nil, -2
         for i = 1, n do
             local x, y = slotDir(i, n)
             local dot = stick.x * x + stick.y * y
             if dot > bestDot then best, bestDot = i, dot end
         end
-        return best and list[best] and best or nil
+        return best
+    end
+    if W.Held() then
+        local kept = self.frame:GetAttribute("ck-aim") or 0
+        if kept > 0 and kept <= n then return kept end
     end
 end
 
@@ -1749,31 +1762,37 @@ function W:Track()
         self:RangeParty()
         return self:TrackParty()
     end
-    local i = self:Aimed()
+    local i = self:AimedSection(SEGMENTS)
     if i == self.aimed then return end
     self.aimed = i
     local item = i and self:PageItems()[i]
     local view = self.view
-    view.highlight:SetShown(item ~= nil)
+    -- Any section lit, EXIT and the empty ones too (they close the wheel)
+    view.highlight:SetShown(i ~= nil)
+    if i then self:PlaceOverlay(view.highlight, "sel", i, SEGMENTS) end
+    if i and CK.Vibration and self.frame:IsShown() and i ~= self.ticked then
+        self.ticked = i
+        CK.Vibration:Fire("wheelTick")
+    end
     local mine = tonumber(self.paintedWheel)
-    if not item then
+    if not i then
         self.ticked = nil
         -- A wheel of the player's: its name
         view.name:SetText(mine and CK.MyWheels and CK.MyWheels:Name(mine) or L.WHEEL_NOTHING)
-        view.count:SetText(format(mine and L.MYWHEEL_NOTHING_HINT or L.WHEEL_NOTHING_HINT, W.StickWords()))
+        view.count:SetText(format(W.Held() and L.WHEEL_NOTHING_HINT_HOLD or L.WHEEL_NOTHING_HINT, W.StickWords()))
         return
     end
-    self:PlaceOverlay(view.highlight, "sel", i, self.paintedCount or SEGMENTS)
+    if not item then
+        view.name:SetText(i == EXIT and L.WHEEL_EXIT or L.WHEEL_EMPTY)
+        view.count:SetText(L.WHEEL_EXIT_HINT)
+        return
+    end
     view.name:SetText(W.EntryName(item) or "")
     if item.kind == "item" then
         local count = C_Item.GetItemCount and C_Item.GetItemCount(item.id) or 0
         view.count:SetText(format("%s  -  %d", item.cat and L["WHEEL_CAT_" .. item.cat:upper()] or L.WHEEL_KIND_ITEM, count))
     else
         view.count:SetText(item.kind == "spell" and L.WHEEL_KIND_SPELL or L.WHEEL_KIND_MACRO)
-    end
-    if CK.Vibration and self.frame:IsShown() and i ~= self.ticked then
-        self.ticked = i
-        CK.Vibration:Fire("wheelTick")
     end
 end
 
@@ -1930,6 +1949,15 @@ end
 -- (greyed when dead or offline: a resurrection is cast on them too), their
 -- health on the portrait; a member who isn't there: nothing at all
 local function paintMember(seg, item)
+    -- EXIT's place: its cross and name
+    if seg.exit then
+        seg.slot:Show()
+        seg.label:Show()
+        seg.hp:Hide()
+        if seg.ring then seg.ring:Hide() end
+        paintExit(seg)
+        return
+    end
     local unit = item and item.unit
     local here = unit and UnitExists(unit) and true or false
     seg.slot:SetShown(here)
@@ -1995,8 +2023,7 @@ function W:PaintParty()
         end
     end
     self:RangeParty(true)
-    local h = function(key) return CK:GlyphMarkup(key, 14) end
-    pv.help:SetText(format("%s %s   %s %s", h("RS"), L.PARTY_CAST, h("B"), L.WHEEL_CLOSE))
+    pv.help:SetText(helpText(L.PARTY_CAST, L.PARTY_RELEASE_CAST))
     -- Not "nothing aimed" (nil): the banner is written, even the first time
     self.aimed = false
     self:TrackParty()
@@ -2048,48 +2075,38 @@ function W:RangeParty(now)
     end
 end
 
--- The member the right stick points at (past half its course): the nearest
--- one there, as the secure code picks
-function W:AimedParty()
-    local state = C_GamePad and C_GamePad.GetDeviceMappedState and C_GamePad.GetDeviceMappedState()
-    local stick = state and state.sticks and state.sticks[aimStick(self.frame)]
-    if not (stick and stick.len and stick.len > AIM) then return nil end
-    local list = self:PageItems()
-    local best, bestDot
-    for i, d in ipairs(PARTY_DIRS) do
-        local item = list[i]
-        if item and UnitExists(item.unit) then
-            local dot = stick.x * d[1] + stick.y * d[2]
-            if not bestDot or dot > bestDot then best, bestDot = i, dot end
-        end
-    end
-    return best
-end
-
 function W:TrackParty()
     local pv = self.pview
-    local i = self:AimedParty()
+    -- Any of its 6 sections, as the secure code picks (a member not there,
+    -- EXIT: they close the wheel)
+    local i = self:AimedSection(PARTY_SECTIONS)
     if i == self.aimed then return end
     self.aimed = i
     local list = self:PageItems()
     local item = i and list[i]
+    if item and not UnitExists(item.unit) then item = nil end
     for j, seg in ipairs(pv.members) do seg.slot.pressed:SetShown(j == i) end
-    pv.indicator:SetShown(item ~= nil)
-    pv.arrow:SetShown(item ~= nil)
+    pv.indicator:SetShown(i ~= nil)
+    pv.arrow:SetShown(i ~= nil)
+    -- (the spell's name: the first member's entry, you)
     pv.name:SetText(list[1] and W.EntryName(list[1]) or "")
-    if not item then
+    if not i then
         self.ticked = nil
-        pv.count:SetText(L.PARTY_HINT)
+        pv.count:SetText(W.Held() and L.PARTY_HINT_HOLD or L.PARTY_HINT)
         return
     end
-    -- Turned to the member, as the game's flyouts turn theirs (angles
+    -- Turned to the section, as the game's flyouts turn theirs (angles
     -- clockwise from the top)
-    local a = math.pi + (i - 1) * 2 * math.pi / #PARTY_DIRS
+    local a = slotAngle(i, PARTY_SECTIONS)
     pv.indicator:SetRotation(math.pi - a)
     pv.arrow:SetRotation(math.pi / 2 - a)
     pv.arrow:ClearAllPoints()
     pv.arrow:SetPoint("CENTER", pv, "CENTER", 38 * PARTY_DIRS[i][1], 38 * PARTY_DIRS[i][2])
-    pv.count:SetText(UnitName(item.unit))
+    if item then
+        pv.count:SetText(UnitName(item.unit))
+    else
+        pv.count:SetText(i == PARTY_EXIT and L.WHEEL_EXIT or L.WHEEL_EMPTY)
+    end
     if CK.Vibration and self.frame:IsShown() and i ~= self.ticked then
         self.ticked = i
         CK.Vibration:Fire("wheelTick")
@@ -2221,13 +2238,12 @@ function W:PartyOpen()
     return wheel and wheel:IsShown() and isParty(wheel:GetAttribute("wheel")) or false
 end
 
--- The game's stick direction keys (GamePadStickAxisButtons), for a party
--- spell's wheel (letting the stick go casts): on while one is open, and for
--- a whole fight when a party spell is on a button (the game refuses the
--- setting in combat: turned on as the fight starts); the player's own
--- value given back after. The other wheels let go to use (option): on
--- while the option is. Kept on, they close the game's own flyouts as
--- soon as their stick moves: the shield below keeps them away meanwhile.
+-- The game's stick direction keys (GamePadStickAxisButtons), what the
+-- wheels' secure code sees of the right stick (a flick let go, the section
+-- lit): on while a wheel is on a button (the game refuses the setting in
+-- combat: on before, and as a fight starts); the player's own value given
+-- back after. Kept on, they close the game's own flyouts as soon as their
+-- stick moves: the shield below keeps them away meanwhile.
 function W:StickKeys(on)
     if InCombatLockdown() then return end
     local s = settings()
@@ -2285,27 +2301,42 @@ function W:UpdateShield()
     shield:SetShown(settings().stickButtonsWas ~= nil and self:FlyoutOpen())
 end
 
--- A party spell on a button (this character's, its profile in use)
-function W:PartyBound()
-    local M = CK.Mapping
-    return M and M.HasPartySpells and M:HasPartySpells() or false
+-- The wheels' own keys (the game's Key Bindings can put them on a key)
+local BINDABLE = { "ControllerKeyboardWheelToggle", "ControllerKeyboardUsableToggle" }
+for n = 1, W.MY_MAX do BINDABLE[#BINDABLE + 1] = "ControllerKeyboardMyWheel" .. n end
+
+-- A wheel on a button (this character's, its profile in use; or a key of
+-- the game's Key Bindings). The quick phrases and the minimap's labels,
+-- given like wheels, aren't
+function W:WheelBound()
+    local s = CK.db and CK.db.settings
+    if not s then return false end
+    for _, list in ipairs({ s.mapping, s.replaced }) do
+        for _, action in pairs(list or {}) do
+            local which = type(action) == "string" and action:match("^wheel:(.+)$")
+            if which and which ~= "phrases" and which ~= "minimap" then return true end
+        end
+    end
+    for _, name in ipairs(BINDABLE) do
+        if GetBindingKey("CLICK " .. name .. ":LeftButton") then return true end
+    end
+    return false
 end
 
--- The stick's direction keys on while a party spell is on a button: on
--- only as its wheel opened, the game took a second to send them (reported:
--- the stick had to stay on the portrait a second); the player's value back
--- when none is left, and at logout (on again at the next login)
+-- The stick's direction keys on while a wheel is on a button: on only as a
+-- wheel opened, the game took a second to send them (reported: the stick
+-- had to stay on the portrait a second); the player's value back when none
+-- is left, and at logout (on again at the next login)
 function W:SyncStickKeys()
     if InCombatLockdown() then return end
-    self:StickKeys(self:PartyOpen() or self:PartyBound() or W.LetGo())
+    self:StickKeys(self:PartyOpen() or self:WheelBound())
 end
 
 function W:RestoreSettings()
     if InCombatLockdown() then return end
     local s = settings()
-    -- (kept while a party spell's wheel is open, or one is on a button, or
-    -- the wheels are let go to use)
-    if s.stickButtonsWas ~= nil and not self:PartyOpen() and not self:PartyBound() and not W.LetGo() then
+    -- (kept while a party spell's wheel is open, or a wheel is on a button)
+    if s.stickButtonsWas ~= nil and not self:PartyOpen() and not self:WheelBound() then
         setCVar("GamePadStickAxisButtons", s.stickButtonsWas)
         s.stickButtonsWas = nil
     end
@@ -2326,11 +2357,58 @@ function W:Toggle(which, comboId)
     if which == "minimap" and CK.MinimapLabels then return CK.MinimapLabels:ToggleButton() end
     -- A party spell ("party:<spell ID>"): its small wheel, on that button
     local spell = type(which) == "string" and tonumber(which:match("^party:(%d+)$"))
-    if spell then return self:PartyToggle(spell, comboId) end
-    self:Build()
-    if which == "usable" then return self.usableToggle end
-    local n = tonumber(which)
-    return n and self.myToggles[n] or self.toggle
+    local t
+    if spell then
+        t = self:PartyToggle(spell, comboId)
+    else
+        self:Build()
+        local n = tonumber(which)
+        t = which == "usable" and self.usableToggle or (n and self.myToggles[n]) or self.toggle
+    end
+    self:NoteKey(t, comboId)
+    return t
+end
+
+---------------------------------------------------------------------------
+-- The keys each wheel's button is on ("ck-keys": ",PADRSHOULDER,"): while
+-- its wheel is open they stay its own (not A's, B's, LB / RB's of the open
+-- wheel), so that key pressed again closes it, held its release is seen.
+-- Noted as the Gamepad tab's bindings are set (Mapping:Apply, out of
+-- combat), with the game's Key Bindings' keys
+---------------------------------------------------------------------------
+local function writeKeys(t)
+    local keys = {}
+    for key in pairs(t.ckKeys or {}) do keys[#keys + 1] = key end
+    for _, bound in ipairs({ GetBindingKey("CLICK " .. t:GetName() .. ":LeftButton") }) do
+        -- (without its modifiers: the wheel takes the key with all of them)
+        keys[#keys + 1] = bound:match("([^%-]+)$")
+    end
+    t:SetAttribute("ck-keys", "," .. table.concat(keys, ",") .. ",")
+end
+
+function W:NoteKey(t, comboId)
+    if InCombatLockdown() then return end
+    local M = CK.Mapping
+    local inputId = (comboId or ""):match("^(%w+):")
+    local input = inputId and M and M.BY_ID[inputId]
+    local key = input and M:InputKey(input)
+    if key then
+        t.ckKeys = t.ckKeys or {}
+        t.ckKeys[key] = true
+    end
+    writeKeys(t)
+end
+
+-- Before the bindings are set again: none noted
+function W:ForgetKeys()
+    if InCombatLockdown() or not self.frame then return end
+    local all = { self.toggle, self.usableToggle }
+    for _, t in ipairs(self.myToggles) do all[#all + 1] = t end
+    for _, t in pairs(self.partyToggles) do all[#all + 1] = t end
+    for _, t in ipairs(all) do
+        t.ckKeys = nil
+        writeKeys(t)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -2374,9 +2452,7 @@ function W:Init()
         -- for the fight (the game refuses the setting in combat)
         if event == "PLAYER_REGEN_DISABLED" then
             W:PlacePartyKeys()
-            if (CK.Mapping and CK.Mapping.HasPartySpells and CK.Mapping:HasPartySpells()) or W.LetGo() then
-                W:StickKeys(true)
-            end
+            if W:WheelBound() then W:StickKeys(true) end
         end
         if event == "PLAYER_REGEN_DISABLED" or event == "BAG_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_COOLDOWN" then
             W:Paint()
